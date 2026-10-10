@@ -13,7 +13,8 @@ status: draft
 `docsys` checks a project's documentation against the [documentation system](https://github.com/Skl8em/documentality): every document carries a frontmatter that declares what it does and for whom, and `docsys` verifies that frontmatter, the identifiers and links between documents, and the fixity of frozen records.
 
 It is a Python package that a project declares as a development dependency.
-It installs and finds its workspace — the nearest directory holding `docsys.yaml`, or the one `--workspace` names — and implements no checks yet: they are being extracted, one at a time and test first, from the `scripts/` folder of the documentation system's repository.
+It installs, finds its workspace — the nearest directory holding `docsys.yaml`, or the one `--workspace` names — and reads that file, whose keys the [`docsys.yaml` reference](codifying/configuration.md) lists.
+It implements no checks yet: they are being extracted, one at a time and test first, from the `scripts/` folder of the documentation system's repository.
 
 `docsys` exits `0` when every check passes, `1` when a check reports a finding, and `2` when the run cannot happen (usage, configuration, workspace); every `docsys` package, in any language, returns the same.
 
