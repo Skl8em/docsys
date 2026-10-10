@@ -11,239 +11,355 @@ ignored typo, and a section that is present must be complete. Scalars stay strin
 refused when they are not integers. Every refusal starts with the file's name and
 ends with a `fix:`, since the reader is often a machine with no other context.
 
+The file is read as `object` and every value narrowed before it is kept, so what
+`validate` returns is exactly the `Config` it is typed as.
+
     from docsys.config import load_config, in_scope
     cfg = load_config(workspace)
     cfg["register"]         # None when the project keeps no register
     in_scope(cfg["scope"], "docs/README.md")
 """
-import copy
+import os
 import re
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
+from typing import Final, TypedDict
 
 import yaml
 
 from .workspace import CONFIG_NAME
 from .yaml_frontmatter import StrictLoader
 
+
+class Scope(TypedDict):
+    include: list[str]
+    exclude: list[str]
+
+
+class Register(TypedDict):
+    path: str
+    columns: int
+    ordinal_column: int
+    status_column: int
+    ordinal_pattern: str
+    superseded_pattern: str
+
+
+class PairedChange(TypedDict):
+    since: str
+    mechanism: list[str]
+    understanding: list[str]
+    exempt: list[str]
+    enforce_on: list[str]
+
+
+class Markers(TypedDict):
+    done: str
+    current: str
+    planned: str
+
+
+class PhaseTable(TypedDict):
+    path: str
+    row: str
+
+
+class StatusLine(TypedDict):
+    path: str
+    line: str
+
+
+class Phases(TypedDict):
+    ledger: str
+    root: str
+    folder: str
+    field: str
+    markers: Markers
+    tables: list[PhaseTable]
+    status: StatusLine
+    mention: str
+
+
+class Config(TypedDict):
+    version: str
+    scope: Scope
+    root_document: str
+    register: Register | None
+    paired_change: PairedChange | None
+    phases: Phases | None
+
+
 # The formats of docsys.yaml this package reads — part of the cross-package API:
 # every docsys package, in any language, reads the same files.
-FORMAT_VERSIONS = ("1",)
+FORMAT_VERSIONS: Final = ("1",)
 
-DEFAULT_ROOT_DOCUMENT = "README.md"
-SCOPE_KEYS = ("include", "exclude")
-OPTIONAL_SECTIONS = {
-    "register": ("path", "columns", "ordinal_column", "status_column",
-                 "ordinal_pattern", "superseded_pattern"),
-    "paired_change": ("since", "mechanism", "understanding", "exempt", "enforce_on"),
-    "phases": ("ledger", "root", "folder", "field", "markers", "tables", "status", "mention"),
-}
-TOP_LEVEL = ("version", "scope", "root_document", *OPTIONAL_SECTIONS)
+DEFAULT_ROOT_DOCUMENT: Final = "README.md"
+# The keys each section accepts are the fields of its type, in their order.
+TOP_LEVEL: Final = tuple(Config.__annotations__)
 # register.<key> -> number of capture groups its pattern must carry.
-PATTERN_GROUPS = {"ordinal_pattern": 2, "superseded_pattern": 1}
+PATTERN_GROUPS: Final = {"ordinal_pattern": 2, "superseded_pattern": 1}
 
 
 class ConfigError(ValueError):
     """The configuration is unusable. The message starts with the file's name and
     carries its `fix:`."""
 
-    def __init__(self, message):
+    def __init__(self, message: str) -> None:
         super().__init__(f"{CONFIG_NAME}: {message}")
 
 
-def _string_list(value, key):
-    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-        raise ConfigError(f"`{key}` must be a list of strings — fix: write it as "
-                          f"`{key.split('.')[-1]}: [a, b]`.")
+# --- narrowing a value read from YAML ---------------------------------------------
+
+def _mapping(value: object, key: str, fix: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ConfigError(f"`{key}` must be a mapping — fix: {fix}.")
+    checked: dict[str, object] = {}
+    for name, item in value.items():
+        if not isinstance(name, str):
+            raise ConfigError(f"`{key}` has a key {name!r} that is not a name — fix: write it as a word.")
+        checked[name] = item
+    return checked
 
 
-def _relative_path(value, key, example):
-    """A path relative to the workspace, staying inside it."""
-    if not isinstance(value, str) or not value:
-        raise ConfigError(f"`{key}` must be a path — fix: write it as `{key.split('.')[-1]}: {example}`.")
-    if value.startswith("/") or ".." in PurePosixPath(value).parts:
-        raise ConfigError(f"`{key}`: `{value}` must be relative to the workspace and stay inside it — "
-                          f"fix: write it from the folder holding {CONFIG_NAME}, without a leading `/` or `..`.")
-
-
-def _integer(value, key):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        raise ConfigError(f"`{key}` must be an integer, got {value!r} — fix: write a bare number, "
-                          f"e.g. `{key.split('.')[-1]}: 4`.") from None
-
-
-def _section(cfg, name, keys):
-    section = cfg[name]
-    if not isinstance(section, dict):
-        raise ConfigError(f"`{name}` must be a mapping — fix: give it the keys {list(keys)}, "
-                          f"or remove it to turn its checks off.")
+def _section(value: object, name: str, keys: Sequence[str]) -> dict[str, object]:
+    """A section, which must carry exactly `keys`."""
+    section = _mapping(value, name, f"give it the keys {list(keys)}, or remove it to turn its checks off")
     for key in keys:
         if key not in section:
             raise ConfigError(f"`{name}.{key}` is missing — fix: add it to the `{name}` section.")
     extra = sorted(set(section) - set(keys))
     if extra:
         raise ConfigError(f"`{name}` has unknown key(s) {extra} — fix: remove them; allowed: {list(keys)}.")
+    return section
 
 
-def _validate_version(cfg):
+def _string(value: object, key: str, fix: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"`{key}` must be a non-empty string — fix: {fix}.")
+    return value
+
+
+def _string_list(value: object, key: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ConfigError(f"`{key}` must be a list of strings — fix: write it as "
+                          f"`{key.split('.')[-1]}: [a, b]`.")
+    checked: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ConfigError(f"`{key}` must be a list of strings, and holds {item!r} — fix: write it as "
+                              f"`{key.split('.')[-1]}: [a, b]`.")
+        checked.append(item)
+    return checked
+
+
+def _relative_path(value: object, key: str, example: str) -> str:
+    """A path relative to the workspace, staying inside it."""
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"`{key}` must be a path — fix: write it as `{key.split('.')[-1]}: {example}`.")
+    if value.startswith("/") or ".." in PurePosixPath(value).parts:
+        raise ConfigError(f"`{key}`: `{value}` must be relative to the workspace and stay inside it — "
+                          f"fix: write it from the folder holding {CONFIG_NAME}, without a leading `/` or `..`.")
+    return value
+
+
+def _integer(value: object, key: str) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    raise ConfigError(f"`{key}` must be an integer, got {value!r} — fix: write a bare number, "
+                      f"e.g. `{key.split('.')[-1]}: 4`.")
+
+
+def _regex(value: object, key: str, named: Sequence[str] = (), groups: int | None = None) -> str:
+    """A regular expression that compiles, carries the `named` groups and, when
+    `groups` is given, exactly that many capture groups."""
+    if not isinstance(value, str):
+        raise ConfigError(f"`{key}` must be a regular expression, got {value!r} — fix: write it as a quoted string.")
+    try:
+        compiled = re.compile(value)
+    except re.error as exc:
+        raise ConfigError(f"`{key}` is not a valid regular expression ({exc}) — fix: correct the pattern.") from None
+    missing = [g for g in named if g not in compiled.groupindex]
+    if missing:
+        raise ConfigError(f"`{key}` must have the named group(s) {missing} — fix: write them as `(?P<name>…)`.")
+    if groups is not None and compiled.groups != groups:
+        raise ConfigError(f"`{key}` must have exactly {groups} capture group(s) "
+                          f"(found {compiled.groups}) — fix: wrap the part to extract in ( ).")
+    return value
+
+
+# --- the sections -----------------------------------------------------------------
+
+def _version(cfg: dict[str, object]) -> str:
     if "version" not in cfg:
         raise ConfigError(f"`version` is missing — fix: add `version: {FORMAT_VERSIONS[-1]}` at the top.")
     version = cfg["version"]
-    if version not in FORMAT_VERSIONS:
+    if not isinstance(version, str) or version not in FORMAT_VERSIONS:
         raise ConfigError(f"`version` is {version!r}, and this docsys reads version(s) "
                           f"{', '.join(FORMAT_VERSIONS)} — fix: install a docsys that reads it, "
                           f"or write the file in version {FORMAT_VERSIONS[-1]}.")
+    return version
 
 
-def _validate_scope(cfg):
+def _scope(cfg: dict[str, object]) -> Scope:
     if "scope" not in cfg:
         raise ConfigError("`scope` is missing — fix: add `scope: {include: [<folder>/]}`, naming the "
                           "documents the framework governs.")
-    scope = cfg["scope"]
-    if not isinstance(scope, dict):
-        raise ConfigError("`scope` must be a mapping — fix: write it as `scope: {include: [<folder>/]}`.")
-    extra = sorted(set(scope) - set(SCOPE_KEYS))
+    raw = _mapping(cfg["scope"], "scope", "write it as `scope: {include: [<folder>/]}`")
+    keys = tuple(Scope.__annotations__)
+    extra = sorted(set(raw) - set(keys))
     if extra:
-        raise ConfigError(f"`scope` has unknown key(s) {extra} — fix: remove them; allowed: {list(SCOPE_KEYS)}.")
-    if "include" not in scope:
+        raise ConfigError(f"`scope` has unknown key(s) {extra} — fix: remove them; allowed: {list(keys)}.")
+    if "include" not in raw:
         raise ConfigError("`scope.include` is missing — fix: list the folders and files the framework governs.")
-    scope.setdefault("exclude", [])
-    for key in SCOPE_KEYS:
-        _string_list(scope[key], f"scope.{key}")
-        for pattern in scope[key]:
+    patterns: dict[str, list[str]] = {}
+    for key in keys:
+        patterns[key] = _string_list(raw.get(key, []), f"scope.{key}")
+        for pattern in patterns[key]:
             if not pattern:
                 raise ConfigError(f"`scope.{key}` holds an empty pattern — fix: remove it.")
             _relative_path(pattern, f"scope.{key}", "[docs/]")
-    if not scope["include"]:
+    if not patterns["include"]:
         raise ConfigError("`scope.include` must list at least one pattern — the gate would check nothing; "
                           "fix: name the folders and files the framework governs.")
+    return Scope(include=patterns["include"], exclude=patterns["exclude"])
 
 
-def _validate_register(reg):
-    for key in ("columns", "ordinal_column", "status_column"):
-        reg[key] = _integer(reg[key], f"register.{key}")
-    for key in ("ordinal_column", "status_column"):
-        if not 0 <= reg[key] < reg["columns"]:
+def _register(value: object) -> Register:
+    raw = _section(value, "register", tuple(Register.__annotations__))
+    columns = _integer(raw["columns"], "register.columns")
+    ordinal_column = _integer(raw["ordinal_column"], "register.ordinal_column")
+    status_column = _integer(raw["status_column"], "register.status_column")
+    for key, column in (("ordinal_column", ordinal_column), ("status_column", status_column)):
+        if not 0 <= column < columns:
             raise ConfigError(
-                f"`register.{key}` ({reg[key]}) is outside the row: `register.columns` is "
-                f"{reg['columns']}, so columns are numbered 0–{reg['columns'] - 1} — fix: correct one of them.")
-    for key, groups in PATTERN_GROUPS.items():
-        try:
-            compiled = re.compile(reg[key])
-        except (re.error, TypeError) as exc:
-            raise ConfigError(f"`register.{key}` is not a valid regular expression ({exc}) — "
-                              f"fix: correct the pattern.") from None
-        if compiled.groups != groups:
-            raise ConfigError(f"`register.{key}` must have exactly {groups} capture group(s) "
-                              f"(found {compiled.groups}) — fix: wrap the part to extract in ( ).")
+                f"`register.{key}` ({column}) is outside the row: `register.columns` is "
+                f"{columns}, so columns are numbered 0–{columns - 1} — fix: correct one of them.")
+    patterns = {key: _regex(raw[key], f"register.{key}", groups=groups) for key, groups in PATTERN_GROUPS.items()}
+    return Register(
+        path=_string(raw["path"], "register.path", "name the register's file"),
+        columns=columns, ordinal_column=ordinal_column, status_column=status_column,
+        ordinal_pattern=patterns["ordinal_pattern"], superseded_pattern=patterns["superseded_pattern"])
 
 
-def _validate_paired_change(pc):
-    if not isinstance(pc["since"], str) or not re.fullmatch(r"[0-9a-f]{7,40}", pc["since"]):
+def _paired_change(value: object) -> PairedChange:
+    raw = _section(value, "paired_change", tuple(PairedChange.__annotations__))
+    since = raw["since"]
+    if not isinstance(since, str) or not re.fullmatch(r"[0-9a-f]{7,40}", since):
         raise ConfigError(f"`paired_change.since` must be a commit id (7–40 lowercase hex digits), "
-                          f"got {pc['since']!r} — fix: write the id of the commit after which the rule applies.")
-    for key in ("mechanism", "understanding", "exempt", "enforce_on"):
-        _string_list(pc[key], f"paired_change.{key}")
+                          f"got {since!r} — fix: write the id of the commit after which the rule applies.")
+    lists = {key: _string_list(raw[key], f"paired_change.{key}")
+             for key in ("mechanism", "understanding", "exempt", "enforce_on")}
     consequence = {"mechanism": "the rule would never fire", "understanding": "the rule would never pass",
                    "enforce_on": "the rule would never fail"}
     for key, why in consequence.items():
-        if not pc[key]:
+        if not lists[key]:
             raise ConfigError(f"`paired_change.{key}` must list at least one entry — {why}; "
                               f"fix: add one, or remove `paired_change` to turn the rule off.")
+    return PairedChange(since=since, mechanism=lists["mechanism"], understanding=lists["understanding"],
+                        exempt=lists["exempt"], enforce_on=lists["enforce_on"])
 
 
-def _pattern(value, key, groups):
-    """A regular expression that compiles and carries the named `groups`."""
+def _phase_format(value: object, key: str) -> str:
+    if not isinstance(value, str) or "{number" not in value or "{name" not in value:
+        raise ConfigError(f"`phases.{key}` must contain `{{number…}}` and `{{name}}` — "
+                          f"fix: write it as e.g. `{key}: 'phase-{{number:02d}}-{{name}}'`.")
     try:
-        compiled = re.compile(value)
-    except (re.error, TypeError) as exc:
-        raise ConfigError(f"`{key}` is not a valid regular expression ({exc}) — fix: correct the pattern.") from None
-    missing = [g for g in groups if g not in compiled.groupindex]
-    if missing:
-        raise ConfigError(f"`{key}` must have the named group(s) {missing} — fix: write them as `(?P<name>…)`.")
+        value.format(number=1, name="x")
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ConfigError(f"`phases.{key}` does not format with a number and a name ({exc!r}) — "
+                          f"fix: use only `{{number…}}` and `{{name}}`.") from None
+    return value
 
 
-def _validate_phases(ph):
-    for key in ("ledger", "root"):
-        if not isinstance(ph[key], str) or not ph[key]:
-            raise ConfigError(f"`phases.{key}` must be a path, relative to the workspace — "
-                              f"fix: write it as `{key}: <dir>/<file>`.")
-    for key in ("folder", "field"):
-        fmt = ph[key]
-        if not isinstance(fmt, str) or "{number" not in fmt or "{name" not in fmt:
-            raise ConfigError(f"`phases.{key}` must contain `{{number…}}` and `{{name}}` — "
-                              f"fix: write it as e.g. `{key}: 'phase-{{number:02d}}-{{name}}'`.")
-        try:
-            fmt.format(number=1, name="x")
-        except (KeyError, IndexError, ValueError) as exc:
-            raise ConfigError(f"`phases.{key}` does not format with a number and a name ({exc!r}) — "
-                              f"fix: use only `{{number…}}` and `{{name}}`.") from None
-    markers = ph["markers"]
-    statuses = ("done", "current", "planned")
-    if not isinstance(markers, dict) or set(markers) != set(statuses) \
-            or not all(isinstance(v, str) and v for v in markers.values()):
-        raise ConfigError(f"`phases.markers` must map each of {list(statuses)} to the word a table shows for it "
-                          f"— fix: write it as `markers: {{done: …, current: …, planned: …}}`.")
-    if len(set(markers.values())) != len(statuses):
+def _markers(value: object) -> Markers:
+    statuses = tuple(Markers.__annotations__)
+    fix = f"write it as `markers: {{done: …, current: …, planned: …}}`"
+    raw = _mapping(value, "phases.markers", fix)
+    words = {status: raw.get(status) for status in statuses}
+    if set(raw) != set(statuses) or not all(isinstance(w, str) and w for w in words.values()):
+        raise ConfigError(f"`phases.markers` must map each of {list(statuses)} to the word a table shows "
+                          f"for it — fix: {fix}.")
+    checked = {status: _string(word, f"phases.markers.{status}", fix) for status, word in words.items()}
+    if len(set(checked.values())) != len(statuses):
         raise ConfigError("`phases.markers` must give each status a distinct word, or a table row would "
                           "not say which status it means — fix: change the repeated word.")
-    tables = ph["tables"]
-    if not isinstance(tables, list) or not tables:
+    return Markers(done=checked["done"], current=checked["current"], planned=checked["planned"])
+
+
+def _tables(value: object) -> list[PhaseTable]:
+    if not isinstance(value, list) or not value:
         raise ConfigError("`phases.tables` must list at least one table, or the phase-state check would "
                           "compare the ledger with nothing — fix: add the table that lists the phases.")
-    for index, table in enumerate(tables):
+    tables: list[PhaseTable] = []
+    for index, item in enumerate(value):
         where = f"phases.tables[{index}]"
-        if not isinstance(table, dict) or set(table) != {"path", "row"}:
-            extra = sorted(set(table) - {"path", "row"}) if isinstance(table, dict) else []
+        fix = "write it as `{path: <file>, row: <pattern>}`"
+        table = _mapping(item, where, fix)
+        if set(table) != {"path", "row"}:
+            extra = sorted(set(table) - {"path", "row"})
             raise ConfigError(f"`{where}` must have exactly `path` and `row`"
-                              + (f"; unknown key(s) {extra}" if extra else "")
-                              + " — fix: write it as `{path: <file>, row: <pattern>}`.")
-        _pattern(table["row"], f"{where}.row", ("number", "marker"))
-    status = ph["status"]
-    if not isinstance(status, dict) or set(status) != {"path", "line"}:
-        raise ConfigError("`phases.status` must have exactly `path` and `line` — fix: name the file holding "
-                          "the status line, and the pattern that finds it.")
-    _pattern(status["line"], "phases.status.line", ("number",))
-    _pattern(ph["mention"], "phases.mention", ("number",))
+                              + (f"; unknown key(s) {extra}" if extra else "") + f" — fix: {fix}.")
+        tables.append(PhaseTable(path=_string(table["path"], f"{where}.path", "name the file"),
+                                 row=_regex(table["row"], f"{where}.row", named=("number", "marker"))))
+    return tables
 
 
-VALIDATORS = {"register": _validate_register, "paired_change": _validate_paired_change,
-              "phases": _validate_phases}
+def _status(value: object) -> StatusLine:
+    fix = "name the file holding the status line, and the pattern that finds it"
+    status = _mapping(value, "phases.status", fix)
+    if set(status) != {"path", "line"}:
+        raise ConfigError(f"`phases.status` must have exactly `path` and `line` — fix: {fix}.")
+    return StatusLine(path=_string(status["path"], "phases.status.path", fix),
+                      line=_regex(status["line"], "phases.status.line", named=("number",)))
 
 
-def validate(raw):
-    """Check a loaded configuration and return a normalised copy: integer keys
+def _phases(value: object) -> Phases:
+    raw = _section(value, "phases", tuple(Phases.__annotations__))
+    paths = {key: _string(raw[key], f"phases.{key}", f"write it as a path relative to the workspace, `{key}: <dir>/<file>`")
+             for key in ("ledger", "root")}
+    return Phases(
+        ledger=paths["ledger"], root=paths["root"],
+        folder=_phase_format(raw["folder"], "folder"), field=_phase_format(raw["field"], "field"),
+        markers=_markers(raw["markers"]), tables=_tables(raw["tables"]), status=_status(raw["status"]),
+        mention=_regex(raw["mention"], "phases.mention", named=("number",)))
+
+
+def validate(raw: object) -> Config:
+    """Check a loaded configuration and return it normalised: integer keys
     converted, `root_document` and `scope.exclude` defaulted, and every optional
-    section present, None when it is off. Raises ConfigError."""
+    section present, None when it is off. The input is not changed. Raises
+    ConfigError."""
     if not isinstance(raw, dict):
         raise ConfigError(f"must be a mapping of sections — fix: start from `version: {FORMAT_VERSIONS[-1]}` "
                           f"and `scope: {{include: [<folder>/]}}`.")
-    cfg = copy.deepcopy(raw)
+    cfg = _mapping(raw, "the file", "write each section as `name:` at the start of a line")
     unknown = sorted(set(cfg) - set(TOP_LEVEL))
     if unknown:
         raise ConfigError(f"unknown section(s) {unknown} — fix: remove them; the vocabulary is closed: "
                           f"{list(TOP_LEVEL)}.")
-    _validate_version(cfg)
-    _validate_scope(cfg)
-    cfg.setdefault("root_document", DEFAULT_ROOT_DOCUMENT)
-    _relative_path(cfg["root_document"], "root_document", DEFAULT_ROOT_DOCUMENT)
-    for name, keys in OPTIONAL_SECTIONS.items():
-        if name not in cfg:
-            cfg[name] = None
-            continue
-        _section(cfg, name, keys)
-        VALIDATORS[name](cfg[name])
-    return cfg
+    return Config(
+        version=_version(cfg),
+        scope=_scope(cfg),
+        root_document=_relative_path(cfg.get("root_document", DEFAULT_ROOT_DOCUMENT), "root_document",
+                                     DEFAULT_ROOT_DOCUMENT),
+        register=_register(cfg["register"]) if "register" in cfg else None,
+        paired_change=_paired_change(cfg["paired_change"]) if "paired_change" in cfg else None,
+        phases=_phases(cfg["phases"]) if "phases" in cfg else None,
+    )
 
 
-def load_config(workspace):
+def load_config(workspace: str | os.PathLike[str]) -> Config:
     """Read and validate `docsys.yaml` in the workspace."""
     path = Path(workspace) / CONFIG_NAME
     try:
         with open(path, encoding="utf-8") as fh:
-            raw = yaml.load(fh, Loader=StrictLoader)
+            raw: object = yaml.load(fh, Loader=StrictLoader)
     except FileNotFoundError:
         raise ConfigError(f"not found in {workspace} — fix: run `docsys init` there, "
                           f"or pass the workspace that holds it.") from None
@@ -252,14 +368,17 @@ def load_config(workspace):
     return validate(raw)
 
 
+# --- the scope --------------------------------------------------------------------
+
 @lru_cache(maxsize=None)
-def _compile(pattern):
+def _compile(pattern: str) -> re.Pattern[str]:
     """A scope pattern as a regular expression over a workspace-relative path.
     `**` spans any number of folders, `*` and `?` stay within one, and a trailing
     `/` names everything below the folder."""
     if pattern.endswith("/"):
         pattern += "**"
-    out, i = [], 0
+    out: list[str] = []
+    i = 0
     while i < len(pattern):
         if pattern.startswith("**/", i):
             out.append("(?:.*/)?")
@@ -279,9 +398,9 @@ def _compile(pattern):
     return re.compile("".join(out))
 
 
-def in_scope(scope, path):
+def in_scope(scope: Scope, path: str) -> bool:
     """Does the framework govern `path`, a workspace-relative POSIX path? It must
     match an `include` pattern and no `exclude` pattern."""
-    def matches(patterns):
+    def matches(patterns: list[str]) -> bool:
         return any(_compile(p).fullmatch(path) for p in patterns)
     return matches(scope["include"]) and not matches(scope["exclude"])

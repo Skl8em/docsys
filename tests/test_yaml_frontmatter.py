@@ -6,7 +6,7 @@ import pytest
 from docsys.yaml_frontmatter import FrontmatterError, StrictLoader, parse, values
 
 
-def doc(frontmatter):
+def doc(frontmatter: str) -> str:
     return f"---\n{frontmatter}---\n\nBody.\n"
 
 
@@ -30,21 +30,21 @@ def doc(frontmatter):
                  {"provenance": {"type": "function", "id": "steering, type: bogus"}},
                  id="a quoted comma inside an inline map"),
 ])
-def test_values(frontmatter, expected):
+def test_values(frontmatter: str, expected: dict[str, object]) -> None:
     assert values(parse(doc(frontmatter))) == expected
 
 
-def test_each_key_carries_its_file_line():
+def test_each_key_carries_its_file_line() -> None:
     fm = parse(doc("title: A\nview: synchronic\n"))
     assert fm == {"title": ("A", 2), "view": ("synchronic", 3)}
 
 
-def test_a_document_without_a_block_has_no_frontmatter():
+def test_a_document_without_a_block_has_no_frontmatter() -> None:
     assert parse("# Title\n\nBody.\n") is None
     assert values(None) == {}
 
 
-def test_crlf_line_endings_read_like_lf():
+def test_crlf_line_endings_read_like_lf() -> None:
     assert values(parse("---\r\ntitle: A\r\n---\r\nBody.\r\n")) == {"title": "A"}
 
 
@@ -60,20 +60,20 @@ def test_crlf_line_endings_read_like_lf():
     pytest.param("- a\n- b\n", 2, "not a key: value mapping",
                  id="a block that is not a mapping"),
 ])
-def test_errors_are_located(frontmatter, line, fragment):
+def test_errors_are_located(frontmatter: str, line: int, fragment: str) -> None:
     with pytest.raises(FrontmatterError) as caught:
         parse(doc(frontmatter))
     assert caught.value.line == line
     assert fragment in caught.value.message
 
 
-def test_an_unterminated_block_is_an_error_on_line_1():
+def test_an_unterminated_block_is_an_error_on_line_1() -> None:
     with pytest.raises(FrontmatterError) as caught:
         parse("---\ntitle: A\n")
     assert caught.value.line == 1
 
 
-def test_the_strict_loader_is_reusable_for_other_files():
+def test_the_strict_loader_is_reusable_for_other_files() -> None:
     import yaml
     assert yaml.load("constitutive: [yes, no]\n", Loader=StrictLoader) == {"constitutive": ["yes", "no"]}
     with pytest.raises(yaml.YAMLError):

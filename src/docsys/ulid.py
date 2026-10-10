@@ -21,14 +21,15 @@ import re
 import secrets
 import sys
 import time
+from typing import Final
 
-CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # excludes I L O U
-_DECODE = {c: i for i, c in enumerate(CROCKFORD)}
-ULID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
-MAX_48 = (1 << 48) - 1
+CROCKFORD: Final = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # excludes I L O U
+_DECODE: Final = {c: i for i, c in enumerate(CROCKFORD)}
+ULID_RE: Final = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
+MAX_48: Final = (1 << 48) - 1
 
 
-def _b32(value, length):
+def _b32(value: int, length: int) -> str:
     out = []
     for _ in range(length):
         out.append(CROCKFORD[value & 0x1F])
@@ -36,7 +37,7 @@ def _b32(value, length):
     return "".join(reversed(out))
 
 
-def new_ulid(ts_ms=None, order=None, rand=None):
+def new_ulid(ts_ms: int | None = None, order: int | None = None, rand: int | None = None) -> str:
     """Mint a ULID. Pass `order` for the ordinal mode, `ts_ms` for a specific
     millisecond timestamp, or neither for `now`."""
     if order is not None:
@@ -51,11 +52,11 @@ def new_ulid(ts_ms=None, order=None, rand=None):
     return _b32(t, 10) + _b32(r, 16)
 
 
-def is_ulid(s):
+def is_ulid(s: str | None) -> bool:
     return bool(ULID_RE.match(s or ""))
 
 
-def timestamp_of(ulid):
+def timestamp_of(ulid: str) -> int:
     """Return the 48-bit timestamp/order encoded in a ULID."""
     t = 0
     for c in ulid[:10]:
@@ -63,7 +64,7 @@ def timestamp_of(ulid):
     return t
 
 
-def _iso_to_ms(s):
+def _iso_to_ms(s: str) -> int:
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
             dt = datetime.datetime.strptime(s, fmt).replace(tzinfo=datetime.timezone.utc)
@@ -73,7 +74,7 @@ def _iso_to_ms(s):
     raise SystemExit(f"unparseable --at date: {s!r} (use YYYY-MM-DD or ISO)")
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(description="Mint a ULID.")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--at", help="chronological: ISO date/time for the timestamp")
@@ -81,9 +82,12 @@ def main():
     ap.add_argument("--slug", help="append -<slug> to print a filename stem")
     args = ap.parse_args()
 
-    ts = _iso_to_ms(args.at) if args.at else None
-    ulid = new_ulid(ts_ms=ts, order=args.order)
-    sys.stdout.write(f"{ulid}-{args.slug}\n" if args.slug else f"{ulid}\n")
+    at: str | None = args.at  # argparse's Namespace is untyped
+    order: int | None = args.order
+    slug: str | None = args.slug
+    ts = _iso_to_ms(at) if at else None
+    ulid = new_ulid(ts_ms=ts, order=order)
+    sys.stdout.write(f"{ulid}-{slug}\n" if slug else f"{ulid}\n")
 
 
 if __name__ == "__main__":
