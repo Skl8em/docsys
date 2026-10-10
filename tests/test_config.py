@@ -4,26 +4,33 @@ decision register, the paired-change rule, the phases — whose checks run only 
 they are present. The vocabulary is closed, and every refusal names the file, the
 key and the fix."""
 import copy
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
-from docsys.config import ConfigError, in_scope, load_config, validate
+from docsys.config import ConfigError, Scope, in_scope, load_config, validate
 from docsys.workspace import CONFIG_NAME
 
-MINIMAL = {"version": "1", "scope": {"include": ["docs/"]}}
+# A configuration as read from YAML, before validation: built malformed on purpose,
+# so it is typed as what `validate` accepts, not as the `Config` it returns.
+Raw = dict[str, object]
+Mutation = Callable[[Raw], None]
 
-REGISTER = {
+MINIMAL: Raw = {"version": "1", "scope": {"include": ["docs/"]}}
+
+REGISTER: dict[str, str] = {
     "path": "log.md", "columns": "5", "ordinal_column": "0", "status_column": "4",
     "ordinal_pattern": r"^\[(\d+)\]\(([^)]+)\)$", "superseded_pattern": r"superseded by (\d+)",
 }
-PAIRED_CHANGE = {
+PAIRED_CHANGE: Raw = {
     "since": "0123456789abcdef0123456789abcdef01234567",
     "mechanism": ["engine/"],
     "understanding": ["docs/", "ARCHITECTURE.md"],
     "exempt": ["engine/test_"],
     "enforce_on": ["trunk"],
 }
-PHASES = {
+PHASES: Raw = {
     "ledger": "state/phases.yaml",
     "root": "records",
     "folder": "phase-{number:02d}-{name}",
@@ -33,7 +40,7 @@ PHASES = {
     "status": {"path": "INDEX.md", "line": r"^\*\*Phase (?P<number>\d+)\*\*"},
     "mention": r"\bPhase (?P<number>\d+)",
 }
-FULL = {
+FULL: Raw = {
     "version": "1",
     "scope": {"include": ["**/*.md"], "exclude": ["raw/", "**/transcripts/"]},
     "root_document": "docs/README.md",
@@ -43,57 +50,65 @@ FULL = {
 }
 
 
-def full_with(mutate):
+def full_with(mutate: Mutation) -> Raw:
     cfg = copy.deepcopy(FULL)
     mutate(cfg)
     return cfg
 
 
-def drop(section, key=None):
-    def go(cfg):
+def section_of(cfg: Raw, section: str) -> Raw:
+    value = cfg[section]
+    assert isinstance(value, dict)
+    return value
+
+
+def drop(section: str, key: str | None = None) -> Mutation:
+    def go(cfg: Raw) -> None:
         if key is None:
             del cfg[section]
         else:
-            del cfg[section][key]
+            del section_of(cfg, section)[key]
     return go
 
 
-def setter(section, key, value):
-    def go(cfg):
+def setter(section: str, key: str | None, value: object) -> Mutation:
+    def go(cfg: Raw) -> None:
         if key is None:
             cfg[section] = value
         else:
-            cfg[section][key] = value
+            section_of(cfg, section)[key] = value
     return go
 
 
 # --- what a valid configuration reads as ------------------------------------------
 
-def test_a_minimal_configuration_turns_the_optional_checks_off():
+def test_a_minimal_configuration_turns_the_optional_checks_off() -> None:
     cfg = validate(copy.deepcopy(MINIMAL))
     assert cfg["register"] is None
     assert cfg["paired_change"] is None
     assert cfg["phases"] is None
 
 
-def test_the_root_document_defaults_to_the_readme():
+def test_the_root_document_defaults_to_the_readme() -> None:
     assert validate(copy.deepcopy(MINIMAL))["root_document"] == "README.md"
 
 
-def test_exclude_defaults_to_nothing():
+def test_exclude_defaults_to_nothing() -> None:
     assert validate(copy.deepcopy(MINIMAL))["scope"]["exclude"] == []
 
 
-def test_a_full_configuration_is_kept_with_integer_keys_converted():
+def test_a_full_configuration_is_kept_with_integer_keys_converted() -> None:
     cfg = validate(copy.deepcopy(FULL))
     assert cfg["root_document"] == "docs/README.md"
+    assert cfg["register"] is not None
     assert cfg["register"]["columns"] == 5
     assert cfg["register"]["status_column"] == 4
     assert cfg["paired_change"] == PAIRED_CHANGE
+    assert cfg["phases"] is not None
     assert cfg["phases"]["ledger"] == "state/phases.yaml"
 
 
-def test_validation_does_not_change_its_input():
+def test_validation_does_not_change_its_input() -> None:
     raw = copy.deepcopy(FULL)
     validate(raw)
     assert raw == FULL
@@ -132,6 +147,8 @@ REFUSALS = [
     pytest.param(setter("register", "typo", "x"), ["register", "typo", "unknown"], id="an unknown register key"),
     pytest.param(setter("register", None, "steering/ADR.md"), ["register", "mapping"],
                  id="a register that is not a section"),
+    pytest.param(setter("register", "path", ["log.md"]), ["register.path", "string"],
+                 id="a register path that is not a string"),
     pytest.param(setter("register", "columns", "five"), ["register.columns", "integer"],
                  id="a non-integer column"),
     pytest.param(setter("register", "superseded_pattern", "(unclosed"),
@@ -170,6 +187,12 @@ REFUSALS = [
                  ["phases.tables[0]", "regular expression"], id="a table row pattern that does not compile"),
     pytest.param(setter("phases", "tables", [{"path": "r.md", "row": "x", "header": "y"}]),
                  ["phases.tables[0]", "header", "unknown"], id="a table entry with an unknown key"),
+    pytest.param(setter("phases", "tables", [{"path": None, "row": r"(?P<number>\d)(?P<marker>x)"}]),
+                 ["phases.tables[0].path", "string"], id="a table path that is not a string"),
+    pytest.param(setter("phases", "status", {"path": ["R.md"], "line": r"(?P<number>\d+)"}),
+                 ["phases.status.path", "string"], id="a status path that is not a string"),
+    pytest.param(setter("register", None, {None: "log.md"}), ["register", "None", "not a name"],
+                 id="a key that is not a name"),
     pytest.param(setter("phases", "status", {"path": "R.md", "line": r"^\*\*Phase \d+"}),
                  ["phases.status", "number"], id="a status pattern without a number group"),
     pytest.param(setter("phases", "mention", r"\bPhase \d+"), ["phases.mention", "number"],
@@ -178,7 +201,7 @@ REFUSALS = [
 
 
 @pytest.mark.parametrize("mutate, fragments", REFUSALS)
-def test_refusals_name_the_file_the_key_and_the_fix(mutate, fragments):
+def test_refusals_name_the_file_the_key_and_the_fix(mutate: Mutation, fragments: list[str]) -> None:
     with pytest.raises(ConfigError) as caught:
         validate(full_with(mutate))
     message = str(caught.value)
@@ -189,7 +212,7 @@ def test_refusals_name_the_file_the_key_and_the_fix(mutate, fragments):
 
 
 @pytest.mark.parametrize("raw", [None, [], "version: 1"], ids=["empty file", "a list", "a string"])
-def test_a_file_that_is_not_a_mapping_is_refused(raw):
+def test_a_file_that_is_not_a_mapping_is_refused(raw: object) -> None:
     with pytest.raises(ConfigError) as caught:
         validate(raw)
     assert "fix:" in str(caught.value)
@@ -213,36 +236,37 @@ def test_a_file_that_is_not_a_mapping_is_refused(raw):
     pytest.param("docs/?.md", "docs/ab.md", False, id="a question mark is only one character"),
     pytest.param("notes+[draft].md", "notes+[draft].md", True, id="other characters are literal"),
 ])
-def test_patterns(pattern, path, expected):
+def test_patterns(pattern: str, path: str, expected: bool) -> None:
     assert in_scope({"include": [pattern], "exclude": []}, path) is expected
 
 
-def test_exclude_wins_over_include():
-    scope = {"include": ["**/*.md"], "exclude": ["raw/"]}
+def test_exclude_wins_over_include() -> None:
+    scope: Scope = {"include": ["**/*.md"], "exclude": ["raw/"]}
     assert in_scope(scope, "docs/a.md")
     assert not in_scope(scope, "raw/essay.md")
 
 
-def test_a_path_outside_every_include_is_out_of_scope():
+def test_a_path_outside_every_include_is_out_of_scope() -> None:
     assert not in_scope({"include": ["docs/"], "exclude": []}, "src/README.md")
 
 
 # --- loading from a workspace -------------------------------------------------------
 
-def write_config(root, text):
+def write_config(root: Path, text: str) -> Path:
     (root / CONFIG_NAME).write_text(text, encoding="utf-8")
     return root
 
 
-def test_load_reads_the_workspace_config(tmp_path):
+def test_load_reads_the_workspace_config(tmp_path: Path) -> None:
     write_config(tmp_path, "version: 1\nscope:\n  include: [docs/]\nregister:\n" + "".join(
         f"  {key}: '{value}'\n" for key, value in REGISTER.items()))
     cfg = load_config(tmp_path)
     assert cfg["scope"]["include"] == ["docs/"]
+    assert cfg["register"] is not None
     assert cfg["register"]["columns"] == 5
 
 
-def test_load_without_a_config_names_the_fix(tmp_path):
+def test_load_without_a_config_names_the_fix(tmp_path: Path) -> None:
     with pytest.raises(ConfigError) as caught:
         load_config(tmp_path)
     assert "fix:" in str(caught.value)
@@ -252,7 +276,7 @@ def test_load_without_a_config_names_the_fix(tmp_path):
     pytest.param("version: 1\nscope: {include: [docs/]\n", "YAML", id="invalid YAML"),
     pytest.param("version: 1\nversion: 1\nscope: {include: [docs/]}\n", "duplicate key", id="a duplicate key"),
 ])
-def test_load_refuses_unreadable_yaml(tmp_path, text, fragment):
+def test_load_refuses_unreadable_yaml(tmp_path: Path, text: str, fragment: str) -> None:
     write_config(tmp_path, text)
     with pytest.raises(ConfigError) as caught:
         load_config(tmp_path)

@@ -22,15 +22,24 @@ The fences: a first line `---`, closed by the next line that strips to `---`.
     fm = load(path)        # {key: (value, file line)}, or None if no block
     values(fm)             # {key: value}
 """
+import os
+from collections.abc import Hashable
+from typing import Any, Final
+
 import yaml
 
-NULL_TAG = "tag:yaml.org,2002:null"
+NULL_TAG: Final = "tag:yaml.org,2002:null"
+
+# A frontmatter block: each key's value, as the strict loader built it (a string,
+# None, or a list or mapping of those, to be narrowed by whoever reads it), and the
+# 1-based file line the key is on.
+Frontmatter = dict[str, tuple[object, int]]
 
 
 class FrontmatterError(ValueError):
     """Malformed frontmatter, located at a 1-based file line."""
 
-    def __init__(self, line, message):
+    def __init__(self, line: int, message: str) -> None:
         super().__init__(f"line {line}: {message}")
         self.line = line
         self.message = message
@@ -40,10 +49,12 @@ class StrictLoader(yaml.SafeLoader):
     """SafeLoader with implicit typing narrowed to null-only, and duplicate keys
     (at any depth) raising instead of silently keeping the last one."""
 
-    def construct_mapping(self, node, deep=False):
-        seen = set()
+    # The signature is PyYAML's, `Any` included: an override must accept and return
+    # what the base class does.
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
+        seen: set[object] = set()
         for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
+            key: object = self.construct_object(key_node, deep=deep)
             if key in seen:
                 raise yaml.constructor.ConstructorError(
                     None, None, f"duplicate key `{key}`", key_node.start_mark)
@@ -57,7 +68,7 @@ StrictLoader.yaml_implicit_resolvers = {
 }
 
 
-def parse(text):
+def parse(text: str) -> Frontmatter | None:
     """Return {key: (value, file line)} for a document's frontmatter, or None if
     the document has no frontmatter block. Raises FrontmatterError otherwise."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -75,15 +86,16 @@ def parse(text):
             return {}
         if not isinstance(root, yaml.MappingNode):
             raise FrontmatterError(root.start_mark.line + offset, "frontmatter is not a key: value mapping")
-        fm = {}
+        fm: Frontmatter = {}
         for key_node, value_node in root.value:
-            key = loader.construct_object(key_node, deep=True)
+            key: object = loader.construct_object(key_node, deep=True)
             line = key_node.start_mark.line + offset
             if not isinstance(key, str):
                 raise FrontmatterError(line, f"key {key!r} is not a string")
             if key in fm:
                 raise FrontmatterError(line, f"duplicate key `{key}`")
-            fm[key] = (loader.construct_object(value_node, deep=True), line)
+            value: object = loader.construct_object(value_node, deep=True)
+            fm[key] = (value, line)
         return fm
     except yaml.MarkedYAMLError as exc:
         # Anchor on where the parser got stuck. The context mark is no better a
@@ -99,11 +111,11 @@ def parse(text):
         loader.dispose()
 
 
-def load(path):
+def load(path: str | os.PathLike[str]) -> Frontmatter | None:
     with open(path, encoding="utf-8") as fh:
         return parse(fh.read())
 
 
-def values(fm):
+def values(fm: Frontmatter | None) -> dict[str, object]:
     """Drop the line numbers: {key: value}. No block reads as no fields."""
     return {key: value for key, (value, _) in (fm or {}).items()}

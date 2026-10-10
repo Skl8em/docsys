@@ -6,27 +6,27 @@ import pytest
 from docsys.ulid import is_ulid, new_ulid, timestamp_of
 
 
-def test_a_new_ulid_is_valid():
+def test_a_new_ulid_is_valid() -> None:
     assert is_ulid(new_ulid())
 
 
-def test_the_timestamp_round_trips():
+def test_the_timestamp_round_trips() -> None:
     assert timestamp_of(new_ulid(ts_ms=1_760_000_000_000)) == 1_760_000_000_000
 
 
-def test_the_ordinal_mode_encodes_the_order():
+def test_the_ordinal_mode_encodes_the_order() -> None:
     assert timestamp_of(new_ulid(order=8_500_000)) == 8_500_000
 
 
-def test_ulids_sort_by_timestamp():
+def test_ulids_sort_by_timestamp() -> None:
     assert new_ulid(ts_ms=1, rand=2**80 - 1) < new_ulid(ts_ms=2, rand=0)
 
 
-def test_randomness_is_explicit_when_given():
+def test_randomness_is_explicit_when_given() -> None:
     assert new_ulid(ts_ms=0, rand=0) == "0" * 26
 
 
-def test_a_timestamp_outside_48_bits_is_refused():
+def test_a_timestamp_outside_48_bits_is_refused() -> None:
     with pytest.raises(ValueError):
         new_ulid(ts_ms=2**48)
 
@@ -34,7 +34,7 @@ def test_a_timestamp_outside_48_bits_is_refused():
 @pytest.mark.parametrize("candidate", [
     pytest.param("01M4FM6C3CASQQB5BRBN7C3BGE", id="a real ULID"),
 ])
-def test_valid(candidate):
+def test_valid(candidate: str) -> None:
     assert is_ulid(candidate)
 
 
@@ -45,5 +45,5 @@ def test_valid(candidate):
     pytest.param("", id="empty"),
     pytest.param(None, id="None"),
 ])
-def test_invalid(candidate):
+def test_invalid(candidate: str | None) -> None:
     assert not is_ulid(candidate)

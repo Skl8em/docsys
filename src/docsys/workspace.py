@@ -6,16 +6,19 @@ or takes it explicitly with `--workspace`; a library caller passes it as an
 argument. Nothing is assumed from the current directory or from where the package
 is installed.
 """
+import os
 from pathlib import Path
 
 CONFIG_NAME = "docsys.yaml"
+
+StrPath = str | os.PathLike[str]
 
 
 class WorkspaceError(Exception):
     """No workspace can be established; the message carries its `fix:`."""
 
 
-def find_workspace(start):
+def find_workspace(start: StrPath) -> Path:
     """Return the nearest directory, from `start` upwards, that holds `docsys.yaml`."""
     start = Path(start).resolve()
     here = start if start.is_dir() else start.parent
@@ -27,7 +30,7 @@ def find_workspace(start):
         f"fix: run `docsys init` at the project's root, or pass --workspace PATH")
 
 
-def resolve_workspace(start, explicit=None):
+def resolve_workspace(start: StrPath, explicit: StrPath | None = None) -> Path:
     """The workspace for a run: `explicit` if given (it must hold `docsys.yaml`),
     otherwise the nearest one above `start`."""
     if explicit is None:

@@ -16,7 +16,11 @@ docsys = "docsys.cli:main"
 Repository = "https://github.com/Skl8em/docsys"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=8",
+    "types-pyyaml>=6.0.12.20260906",
+]
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -27,3 +31,12 @@ packages = ["src/docsys"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+# Every function is typed, the tests included; `tests/test_typing.py` runs this
+# configuration, so the test suite fails on an unannotated or ill-typed function.
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]
