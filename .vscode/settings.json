@@ -1,0 +1,23 @@
+{
+  // The editor runs the same tools, at the same versions and with the same
+  // configuration (pyproject.toml), as `tests/test_tooling.py`: the copies `uv sync`
+  // locks into this repository's .venv. Nothing here sets a rule; rules live in
+  // pyproject.toml.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+
+  // basedpyright (detachhead.basedpyright) replaces Pylance's checking, and loads the
+  // copy in the selected environment.
+  "basedpyright.importStrategy": "fromEnvironment",
+
+  // Ruff (charliermarsh.ruff) lints and formats. Named by path, so a missing .venv is
+  // an error rather than a silent fallback to the extension's own, older copy.
+  "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  }
+}

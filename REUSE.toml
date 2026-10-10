@@ -29,6 +29,7 @@ path = [
   "src/docsys/templates/**",
   "conformance/**",
   ".gitignore",
+  ".vscode/**",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Benjamin Claverie"
