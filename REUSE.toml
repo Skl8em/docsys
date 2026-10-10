@@ -1,0 +1,35 @@
+# Licensing of every file in this repository, by kind (the documentation
+# system's ADR-043). Checked with `reuse lint` (https://reuse.software). When
+# several annotations match a file, the last one wins, so the default comes
+# first and the exceptions follow it.
+
+version = 1
+
+# Code: GPL-3.0-or-later.
+[[annotations]]
+path = "**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Benjamin Claverie"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Prose: CC BY-SA 4.0.
+[[annotations]]
+path = "**/*.md"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Benjamin Claverie"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# What a project copies into its own repository — the schema, the templates,
+# the starting configuration, the conformance suite — and repository settings:
+# CC0, so an adopter's documents and any other implementation of the format
+# carry no condition from this project.
+[[annotations]]
+path = [
+  "src/docsys/schema/**",
+  "src/docsys/templates/**",
+  "conformance/**",
+  ".gitignore",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Benjamin Claverie"
+SPDX-License-Identifier = "CC0-1.0"
