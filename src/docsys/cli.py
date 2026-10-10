@@ -4,6 +4,7 @@ import os
 import sys
 
 from . import __version__, exitcodes
+from .config import ConfigError, load_config
 from .workspace import WorkspaceError, resolve_workspace
 
 
@@ -24,6 +25,11 @@ def main(argv=None):
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
     print(f"docsys {__version__}: workspace {workspace}", file=sys.stderr)
+    try:
+        load_config(workspace)
+    except ConfigError as exc:
+        print(f"docsys: {exc}", file=sys.stderr)
+        return exitcodes.ERROR
     print(f"docsys: this version implements no checks yet — "
           f"fix: run the project's own gate until the checks are ported", file=sys.stderr)
     return exitcodes.ERROR

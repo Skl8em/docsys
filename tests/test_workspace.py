@@ -95,3 +95,12 @@ def test_check_with_an_explicit_workspace_finds_it_from_anywhere(tmp_path):
     elsewhere.mkdir()
     result = run_cli("check", "--workspace", str(root), cwd=elsewhere)
     assert str(root) in result.stdout + result.stderr
+
+
+def test_check_on_an_invalid_config_is_a_configuration_error_naming_the_fix(tmp_path):
+    root = make_workspace(tmp_path / "project")
+    (root / CONFIG_NAME).write_text("version: 1\nscope: {include: [docs/]}\nextra: {}\n", encoding="utf-8")
+    result = run_cli("check", cwd=root)
+    assert result.returncode == 2
+    assert f"{CONFIG_NAME}: unknown section(s) ['extra']" in result.stderr
+    assert "fix:" in result.stderr
