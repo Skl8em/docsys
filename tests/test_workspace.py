@@ -1,6 +1,7 @@
 """The workspace: the project root `docsys` works in, found from the nearest
 `docsys.yaml`, or given explicitly — never assumed from the current directory or
 from where the package is installed."""
+
 import os
 import subprocess
 import sys

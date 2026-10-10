@@ -15,6 +15,7 @@ Standard library only. A library (new_ulid, is_ulid, timestamp_of) and a CLI:
     python -m docsys.ulid --order 8500000       # an ordinal key (phases)
     python -m docsys.ulid --slug gerund-naming  # prints <ulid>-<slug>
 """
+
 import argparse
 import datetime
 import re
@@ -30,7 +31,7 @@ MAX_48: Final = (1 << 48) - 1
 
 
 def _b32(value: int, length: int) -> str:
-    out = []
+    out: list[str] = []
     for _ in range(length):
         out.append(CROCKFORD[value & 0x1F])
         value >>= 5
@@ -67,11 +68,19 @@ def timestamp_of(ulid: str) -> int:
 def _iso_to_ms(s: str) -> int:
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
-            dt = datetime.datetime.strptime(s, fmt).replace(tzinfo=datetime.timezone.utc)
+            dt = datetime.datetime.strptime(s, fmt).replace(tzinfo=datetime.UTC)
             return int(dt.timestamp() * 1000)
         except ValueError:
             continue
     raise SystemExit(f"unparseable --at date: {s!r} (use YYYY-MM-DD or ISO)")
+
+
+class Arguments(argparse.Namespace):
+    """The parsed command line, typed: argparse fills these attributes."""
+
+    at: str | None = None
+    order: int | None = None
+    slug: str | None = None
 
 
 def main() -> None:
@@ -80,14 +89,11 @@ def main() -> None:
     g.add_argument("--at", help="chronological: ISO date/time for the timestamp")
     g.add_argument("--order", type=int, help="ordinal: a controlled sort-key (phases)")
     ap.add_argument("--slug", help="append -<slug> to print a filename stem")
-    args = ap.parse_args()
+    args = ap.parse_args(namespace=Arguments())
 
-    at: str | None = args.at  # argparse's Namespace is untyped
-    order: int | None = args.order
-    slug: str | None = args.slug
-    ts = _iso_to_ms(at) if at else None
-    ulid = new_ulid(ts_ms=ts, order=order)
-    sys.stdout.write(f"{ulid}-{slug}\n" if slug else f"{ulid}\n")
+    ts = _iso_to_ms(args.at) if args.at else None
+    ulid = new_ulid(ts_ms=ts, order=args.order)
+    sys.stdout.write(f"{ulid}-{args.slug}\n" if args.slug else f"{ulid}\n")
 
 
 if __name__ == "__main__":

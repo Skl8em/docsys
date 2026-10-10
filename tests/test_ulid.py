@@ -1,6 +1,7 @@
 """ULIDs (the documentation system's ADR-028): 26 Crockford-base32 characters, a
 48-bit timestamp — or, in the ordinal mode, a controlled sort key — then 80 random
 bits; sortable by the leading timestamp."""
+
 import pytest
 
 from docsys.ulid import is_ulid, new_ulid, timestamp_of
@@ -27,23 +28,29 @@ def test_randomness_is_explicit_when_given() -> None:
 
 
 def test_a_timestamp_outside_48_bits_is_refused() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="out of 48-bit range"):
         new_ulid(ts_ms=2**48)
 
 
-@pytest.mark.parametrize("candidate", [
-    pytest.param("01M4FM6C3CASQQB5BRBN7C3BGE", id="a real ULID"),
-])
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        pytest.param("01M4FM6C3CASQQB5BRBN7C3BGE", id="a real ULID"),
+    ],
+)
 def test_valid(candidate: str) -> None:
     assert is_ulid(candidate)
 
 
-@pytest.mark.parametrize("candidate", [
-    pytest.param("01M4FM6C3CASQQB5BRBN7C3BG", id="too short"),
-    pytest.param("01M4FM6C3CASQQB5BRBN7C3BGI", id="the excluded letter I"),
-    pytest.param("01m4fm6c3casqqb5brbn7c3bge", id="lower case"),
-    pytest.param("", id="empty"),
-    pytest.param(None, id="None"),
-])
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        pytest.param("01M4FM6C3CASQQB5BRBN7C3BG", id="too short"),
+        pytest.param("01M4FM6C3CASQQB5BRBN7C3BGI", id="the excluded letter I"),
+        pytest.param("01m4fm6c3casqqb5brbn7c3bge", id="lower case"),
+        pytest.param("", id="empty"),
+        pytest.param(None, id="None"),
+    ],
+)
 def test_invalid(candidate: str | None) -> None:
     assert not is_ulid(candidate)

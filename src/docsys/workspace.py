@@ -6,6 +6,7 @@ or takes it explicitly with `--workspace`; a library caller passes it as an
 argument. Nothing is assumed from the current directory or from where the package
 is installed.
 """
+
 import os
 from pathlib import Path
 
@@ -27,7 +28,8 @@ def find_workspace(start: StrPath) -> Path:
             return candidate
     raise WorkspaceError(
         f"no {CONFIG_NAME} in {here} or any directory above it — "
-        f"fix: run `docsys init` at the project's root, or pass --workspace PATH")
+        f"fix: run `docsys init` at the project's root, or pass --workspace PATH"
+    )
 
 
 def resolve_workspace(start: StrPath, explicit: StrPath | None = None) -> Path:
@@ -38,6 +40,6 @@ def resolve_workspace(start: StrPath, explicit: StrPath | None = None) -> Path:
     root = Path(explicit).resolve()
     if not (root / CONFIG_NAME).is_file():
         raise WorkspaceError(
-            f"{root} holds no {CONFIG_NAME} — "
-            f"fix: pass the directory that holds it, or run `docsys init` there")
+            f"{root} holds no {CONFIG_NAME} — fix: pass the directory that holds it, or run `docsys init` there"
+        )
     return root

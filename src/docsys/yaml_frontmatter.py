@@ -22,9 +22,15 @@ The fences: a first line `---`, closed by the next line that strips to `---`.
     fm = load(path)        # {key: (value, file line)}, or None if no block
     values(fm)             # {key: value}
 """
+
+# This module is the boundary with PyYAML, whose stubs type every node and every
+# constructed value as `Any`, and leave some parameters unannotated; `Any` and
+# unknown members are allowed here and nowhere else. What leaves the
+# module is typed: a `Frontmatter` block, or `object` for the caller to narrow.
+# pyright: reportAny=false, reportExplicitAny=false, reportUnknownMemberType=false
 import os
 from collections.abc import Hashable
-from typing import Any, Final
+from typing import IO, Any, Final
 
 import yaml
 
@@ -56,8 +62,7 @@ class StrictLoader(yaml.SafeLoader):
         for key_node, _ in node.value:
             key: object = self.construct_object(key_node, deep=deep)
             if key in seen:
-                raise yaml.constructor.ConstructorError(
-                    None, None, f"duplicate key `{key}`", key_node.start_mark)
+                raise yaml.constructor.ConstructorError(None, None, f"duplicate key `{key}`", key_node.start_mark)
             seen.add(key)
         return super().construct_mapping(node, deep=deep)
 
@@ -109,6 +114,12 @@ def parse(text: str) -> Frontmatter | None:
         raise FrontmatterError(line, message) from None
     finally:
         loader.dispose()
+
+
+def load_yaml(stream: str | IO[str]) -> object:
+    """A whole YAML document, read with `StrictLoader`: what it holds is unknown
+    until the caller narrows it."""
+    return yaml.load(stream, Loader=StrictLoader)
 
 
 def load(path: str | os.PathLike[str]) -> Frontmatter | None:
