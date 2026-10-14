@@ -18,6 +18,7 @@ Its checks were extracted, one at a time and test first, from the `scripts/` fol
 
 A document is a Markdown file of the workspace that git tracks, or would track once added, and that the scope in `docsys.yaml` governs.
 Each check's rules are stated in [`conformance/`](conformance/), as the documents of a small workspace and the findings expected on them, so that any `docsys` package, in any language, can be held to them.
+How a check works inside, and why it is built so, is explained for its maintainer in [`docs/`](docs/), which holds the fiche on the ULID check, [referential integrity](docs/referential-integrity.md); the fiches on the other checks are still to write.
 A finding reads `path:line: rule: message — fix: the edit that clears it`.
 
 `docsys` exits `0` when every check passes, `1` when a check reports a finding, and `2` when the run cannot happen (usage, configuration, workspace); every `docsys` package, in any language, returns the same.
