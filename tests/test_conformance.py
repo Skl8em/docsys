@@ -13,7 +13,7 @@ from typing import TypeGuard
 
 import pytest
 
-from docsys.checks import hashes, ledger, links, paired_change, phase_state, slugs, ulids
+from docsys.checks import frontmatter, hashes, ledger, links, paired_change, phase_state, slugs, ulids
 from docsys.config import Config, load_config
 from docsys.findings import Finding, Rule
 from docsys.workspace import CONFIG_NAME
@@ -27,6 +27,7 @@ Check = Callable[[Path, Config], list[Finding]]
 CHECKS: dict[str, tuple[Check, tuple[Rule, ...]]] = {
     "ledger": (ledger.check, ledger.RULES),
     "links": (links.check, links.RULES),
+    "frontmatter": (frontmatter.check, frontmatter.RULES),
     "hashes": (hashes.check, hashes.RULES),
     "paired-change": (paired_change.check, paired_change.RULES),
     "phase-state": (phase_state.check, phase_state.RULES),
