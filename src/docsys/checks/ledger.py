@@ -51,17 +51,51 @@ class Entry:
 
     line: int
     name: str
+    era: str
     status: str
-    number: str | None
+    number: int | None
+
+
+@dataclass(frozen=True)
+class Lagging:
+    """A document the ledger lets stay behind the last closed phase."""
+
+    line: int
+    path: str
+
+
+@dataclass(frozen=True)
+class Ledger:
+    """A ledger that breaks none of its own rules: what the checks that compare other
+    places with it read."""
+
+    phases: list[Entry]
+    lagging: list[Lagging]
+
+    def numbered(self) -> dict[int, Entry]:
+        return {entry.number: entry for entry in self.phases if entry.number is not None}
+
+    def current(self) -> Entry:
+        return next(entry for entry in self.phases if entry.status == "current")
+
+    def last_done(self) -> Entry | None:
+        done = [entry for entry in self.numbered().values() if entry.status == "done"]
+        return max(done, key=lambda entry: entry.number or 0) if done else None
 
 
 def check(workspace: Path, config: Config) -> list[Finding]:
+    return sorted(read(workspace, config)[1], key=lambda finding: finding.line)
+
+
+def read(workspace: Path, config: Config) -> tuple[Ledger | None, list[Finding]]:
+    """The ledger, when the project keeps one and it breaks none of its rules; else
+    None and the findings. A project with no `phases` section has neither."""
     phases = config["phases"]
     if phases is None:
-        return []
+        return None, []
     path = phases["ledger"]
     if not (workspace / path).is_file():
-        return [
+        return None, [
             Finding(
                 MISSING.id,
                 CONFIG_NAME,
@@ -73,18 +107,19 @@ def check(workspace: Path, config: Config) -> list[Finding]:
     try:
         ledger = load_located((workspace / path).read_text(encoding="utf-8"))
     except YamlError as exc:
-        return [Finding(YAML.id, path, exc.line, f"is not valid YAML ({exc.message})", "correct the YAML at that line")]
-    findings = _ledger(path, ledger)
-    return sorted(findings, key=lambda finding: finding.line)
+        return None, [
+            Finding(YAML.id, path, exc.line, f"is not valid YAML ({exc.message})", "correct the YAML at that line")
+        ]
+    return _ledger(path, ledger)
 
 
 def _finding(rule: Rule, path: str, line: int, message: str, fix: str) -> Finding:
     return Finding(rule.id, path, line, message, fix)
 
 
-def _ledger(path: str, ledger: Located | None) -> list[Finding]:
+def _ledger(path: str, ledger: Located | None) -> tuple[Ledger | None, list[Finding]]:
     if ledger is None or not isinstance(ledger.value, dict):
-        return [
+        return None, [
             _finding(
                 SHAPE,
                 path,
@@ -96,7 +131,7 @@ def _ledger(path: str, ledger: Located | None) -> list[Finding]:
     top = ledger.value
     unknown = sorted(set(top) - set(TOP_KEYS))
     if unknown:
-        return [
+        return None, [
             _finding(
                 SHAPE,
                 path,
@@ -107,12 +142,12 @@ def _ledger(path: str, ledger: Located | None) -> list[Finding]:
             for key in unknown
         ]
     if "phases" not in top:
-        return [
+        return None, [
             _finding(SHAPE, path, 1, "`phases` is missing", "add a `phases:` list of the project's phases, in order")
         ]
     listed = top["phases"]
     if not isinstance(listed.value, list) or not listed.value:
-        return [
+        return None, [
             _finding(
                 SHAPE,
                 path,
@@ -128,10 +163,10 @@ def _ledger(path: str, ledger: Located | None) -> list[Finding]:
         findings.extend(problems)
         if entry is not None:
             entries.append(entry)
-    lagging = _lagging(path, top["lagging"]) if "lagging" in top else []
-    if findings:
-        return findings + lagging
-    return _order(path, listed.line, entries) + lagging
+    lagging_findings, lagging = _lagging(path, top["lagging"]) if "lagging" in top else ([], [])
+    findings = findings or _order(path, listed.line, entries)
+    findings = findings + lagging_findings
+    return (None if findings else Ledger(entries, lagging)), findings
 
 
 def _entry(path: str, index: int, item: Located) -> tuple[Entry | None, list[Finding]]:
@@ -230,7 +265,10 @@ def _entry(path: str, index: int, item: Located) -> tuple[Entry | None, list[Fin
         )
     if findings or not isinstance(name, str) or not isinstance(status, str):
         return None, findings
-    return Entry(item.line, name, status, number if isinstance(number, str) else None), findings
+    era = text["era"]
+    if not isinstance(era, str):
+        return None, findings
+    return Entry(item.line, name, era, status, int(number) if isinstance(number, str) else None), findings
 
 
 def _order(path: str, line: int, phases: list[Entry]) -> list[Finding]:
@@ -279,7 +317,7 @@ def _order(path: str, line: int, phases: list[Entry]) -> list[Finding]:
     for index, phase in enumerate(phases):
         if phase.number is None:
             continue
-        if int(phase.number) != expected:
+        if phase.number != expected:
             findings.append(
                 _finding(
                     NUMBER,
@@ -295,7 +333,7 @@ def _order(path: str, line: int, phases: list[Entry]) -> list[Finding]:
     return findings
 
 
-def _lagging(path: str, lagging: Located) -> list[Finding]:
+def _lagging(path: str, lagging: Located) -> tuple[list[Finding], list[Lagging]]:
     """The `lagging:` list's own findings: its shape, a reason for each, no duplicate."""
     if not isinstance(lagging.value, list):
         return [
@@ -306,8 +344,9 @@ def _lagging(path: str, lagging: Located) -> list[Finding]:
                 "`lagging` must be a list of `{path: …, reason: …}`",
                 "write each document as a list item",
             )
-        ]
+        ], []
     findings: list[Finding] = []
+    allowed: list[Lagging] = []
     seen: set[str] = set()
     for index, item in enumerate(lagging.value):
         where = f"`lagging[{index}]`"
@@ -353,4 +392,5 @@ def _lagging(path: str, lagging: Located) -> list[Finding]:
                 _finding(UNIQUE, path, item.line, f"{where} {document!r} is a duplicate", "list each document once")
             )
         seen.add(document)
-    return findings
+        allowed.append(Lagging(item.line, document))
+    return findings, allowed
