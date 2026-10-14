@@ -1,0 +1,402 @@
+# The paired-change check, stated as cases (see links.yaml for the format of a case,
+# and of a `history`: this rule is about commits).
+#
+# The tooling may not change unexplained. A unit of change that touches the mechanism
+# must also touch at least one file a human reads for understanding. The unit is one
+# commit (a merge commit is not one: it brings in another line's history, which is
+# that line's to answer for), plus the uncommitted work that will become the next
+# commit. It is deliberately not the branch: a phase-long branch nearly always touches
+# some document, so a branch-level rule would pass on the very case that motivated it.
+# It is not a proof of adequacy either: a one-word edit to a page satisfies it.
+#
+# `paired_change` in docsys.yaml says which paths are mechanism (`mechanism`, path
+# prefixes), which are understanding (`understanding`, prefixes or one file), which
+# need no account (`exempt`, prefixes), where the rule starts (`since`, a commit: the
+# commits after it are examined, it and everything before it are not) and where it is
+# enforced (`enforce_on`, branches). A project with no such section does not run it.
+# Two things are no change to the mechanism, because there is nothing to explain: a
+# file under an `exempt` prefix, and an edit to a Python file whose syntax tree,
+# docstrings set aside, is unchanged (comments, docstrings, formatting). A file added
+# or deleted is never such an edit, and neither is one that does not parse before or
+# after. That judgement needs a Python syntax tree.
+#
+# Paths are those of the workspace; the commits are examined as they stand, a rename
+# being a delete and an add. The rule fails where work lands, on a branch named in
+# `enforce_on` or on a detached HEAD (a pull request's merge commit in CI), and
+# elsewhere reports the same changes as advisory, so work in progress is not blocked.
+# A finding is on the first mechanism file of the unit that lacks an account (its old
+# path if the unit deleted it), at line 1, and the findings come in the order of the
+# commits, oldest first, the uncommitted work last. Findings about the configuration
+# are on docsys.yaml at line 1.
+
+rules:
+  paired-change/unpaired:
+    severity: error
+    statement: >-
+      A commit, or the uncommitted work, that changes the mechanism also changes a file
+      of the understanding, on a branch where work lands.
+  paired-change/advisory:
+    severity: warning
+    statement: >-
+      The same finding on any other branch: reported, and the run is not failed, so
+      work in progress is not blocked. It will fail when it lands.
+  paired-change/anchor:
+    severity: error
+    statement: >-
+      `paired_change.since` is a commit of this history and an ancestor of HEAD; a
+      shallow clone that lost it is told to fetch the history.
+  paired-change/branches:
+    severity: error
+    statement: >-
+      `paired_change.enforce_on` names at least one branch that exists here, locally or
+      on a remote, or the rule would only ever be advisory.
+
+cases:
+  - name: nothing after the anchor
+    config: &config |
+      version: 1
+      paired_change:
+        since: ${anchor}
+        mechanism: [scripts/, schema/]
+        understanding: [writing/, codifying/, steering/ARCHITECTURE.md]
+        exempt: [scripts/test_]
+        enforce_on: [main, develop]
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+    findings: []
+
+  - name: a commit that changes the tooling and nothing that explains it
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: scripts only, files: {scripts/x.py: "x\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: a commit that changes only the schema
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: schema only, files: {schema/rules.yaml: "r\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: schema/rules.yaml, line: 1 }
+
+  - name: the same change with an account in the same commit
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: scripts and docs, files: {scripts/x.py: "x\n", codifying/gate.md: "g\n"}}
+    findings: []
+
+  - name: a commit that touches no tooling
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: readme, files: {README.md: "r\n"}}
+    findings: []
+
+  - name: a commit that touches only documents
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: docs, files: {writing/rules.md: "r\n"}}
+    findings: []
+
+  - name: a single named file is an accepted account
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: schema and architecture, files: {schema/rules.yaml: "r\n", steering/ARCHITECTURE.md: "a\n"}}
+    findings: []
+
+  - name: a sibling of that file is not
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: schema and contributing, files: {schema/rules.yaml: "r\n", steering/CONTRIBUTING.md: "c\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: schema/rules.yaml, line: 1 }
+
+  - name: the changelog and the phase records are not an account
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: tooling, changelog, plan, files: {scripts/x.py: "x\n", steering/CHANGELOG.md: "c\n", phases/p/plan.md: "p\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: each commit stands alone, so a later document does not account for an earlier change
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: scripts only, files: {scripts/x.py: "x\n"}}
+      - {message: docs later, files: {writing/rules.md: "r\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: every commit without its account is reported, oldest first
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: a, files: {scripts/a.py: "a\n"}}
+      - {message: b with docs, files: {scripts/b.py: "b\n", codifying/x.md: "x\n"}}
+      - {message: c, files: {schema/s.yaml: "s\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/a.py, line: 1 }
+      - { rule: paired-change/unpaired, path: schema/s.yaml, line: 1 }
+
+  - name: history before the anchor is not examined
+    config: *config
+    history:
+      - {message: old scripts only, files: {scripts/old.py: "old\n"}}
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+    findings: []
+
+  - name: a test needs no account
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: test only, files: {scripts/test_x.py: "t\n"}}
+    findings: []
+
+  - name: a test beside real tooling does not excuse the tooling
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: test and tooling, files: {scripts/test_x.py: "t\n", scripts/x.py: "x\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  # --- a Python edit that changes no code needs no account ---
+
+  - name: a comment added
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 1  # why\n"}}
+    findings: []
+
+  - name: a comment removed
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "# why\nx = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 1\n"}}
+    findings: []
+
+  - name: formatting only
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = f( 1,2 )\n"}}
+      - {message: edit, files: {scripts/x.py: "x = f(1, 2)\n"}}
+    findings: []
+
+  - name: a docstring rewritten
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "def f():\n    \"\"\"old\"\"\"\n    return 1\n"}}
+      - {message: edit, files: {scripts/x.py: "def f():\n    \"\"\"new, longer\"\"\"\n    return 1\n"}}
+    findings: []
+
+  - name: a docstring added
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "def f():\n    return 1\n"}}
+      - {message: edit, files: {scripts/x.py: "def f():\n    \"\"\"doc\"\"\"\n    return 1\n"}}
+    findings: []
+
+  - name: a code change
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 2\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: a string literal changed, which is not a docstring
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "def f():\n    return \"a\"\n"}}
+      - {message: edit, files: {scripts/x.py: "def f():\n    return \"b\"\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: a statement added
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 1\ny = 2\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: a new version that does not parse
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = (\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: an old version that did not parse
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = (\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 1\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: a comment-only edit is trivial file by file, so a new file in the same commit is not
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+      - {message: edit, files: {scripts/x.py: "x = 1  # why\n", scripts/y.py: "y\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/y.py, line: 1 }
+
+  # --- removing tooling is changing it ---
+
+  - name: deleting a script without an account
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/y.py: "y\n"}}
+      - {message: delete a script, files: {scripts/y.py: null}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/y.py, line: 1 }
+
+  - name: moving a script out of the tooling is caught by its old path
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/y.py: "y\n"}}
+      - {message: move a script out, files: {scripts/y.py: null, misc_y.py: "y\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/y.py, line: 1 }
+
+  # --- the work that is not yet committed is the next commit ---
+
+  - name: uncommitted tooling work
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+    files:
+      scripts/x.py: "x = 3\n"
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: uncommitted work that changes no code
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+    files:
+      scripts/x.py: "x = 1  # explained\n"
+    findings: []
+
+  - name: uncommitted tooling work beside an uncommitted account
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+    files:
+      scripts/x.py: "x = 3\n"
+      writing/a.md: "also changed\n"
+    findings: []
+
+  - name: uncommitted documents only
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+    files:
+      writing/a.md: "changed\n"
+    findings: []
+
+  - name: a new file nothing tracks yet is the worktree check's to report
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
+    files:
+      scripts/new.py: "n\n"
+    findings: []
+
+  # --- a merge brings in another line's history, which is that line's to answer for ---
+
+  - name: a merge commit is not itself a change
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {branch: side, message: side tooling and docs, files: {scripts/s.py: "s\n", writing/s.md: "s\n"}}
+      - {branch: main, message: merge side, merge: side}
+    findings: []
+
+  # --- where the rule starts, and where it is enforced ---
+
+  - name: an anchor that is no commit of this history
+    config: |
+      version: 1
+      paired_change:
+        since: '0000000000000000000000000000000000000000'
+        mechanism: [scripts/]
+        understanding: [writing/]
+        exempt: []
+        enforce_on: [main]
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+    findings:
+      - { rule: paired-change/anchor, path: docsys.yaml, line: 1 }
+
+  - name: an anchor that is not an ancestor of HEAD
+    config: |
+      version: 1
+      paired_change:
+        since: ${other}
+        mechanism: [scripts/]
+        understanding: [writing/]
+        exempt: []
+        enforce_on: [main]
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {label: other, branch: side, message: elsewhere, files: {writing/b.md: "b\n"}}
+    branch: main
+    findings:
+      - { rule: paired-change/anchor, path: docsys.yaml, line: 1 }
+
+  - name: an enforce_on that names no branch of the repository
+    config: |
+      version: 1
+      paired_change:
+        since: ${anchor}
+        mechanism: [scripts/]
+        understanding: [writing/]
+        exempt: []
+        enforce_on: [trunk, release]
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+    findings:
+      - { rule: paired-change/branches, path: docsys.yaml, line: 1 }
+
+  - name: a project with no paired_change section does not run the rule
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: scripts only, files: {scripts/x.py: "x\n"}}
+    findings: []
+
+  - name: on a branch where work does not land, the same change is advisory
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {branch: feature/x, message: scripts only, files: {scripts/x.py: "x\n"}}
+    findings:
+      - { rule: paired-change/advisory, path: scripts/x.py, line: 1 }
+
+  - name: on a branch named in enforce_on, it is enforced
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {branch: develop, message: scripts only, files: {scripts/x.py: "x\n"}}
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
+
+  - name: on a detached HEAD, which is where a pull request is checked, it is enforced
+    config: *config
+    history:
+      - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n"}}
+      - {message: scripts only, files: {scripts/x.py: "x\n"}}
+    detached: true
+    findings:
+      - { rule: paired-change/unpaired, path: scripts/x.py, line: 1 }
