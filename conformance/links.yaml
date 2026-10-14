@@ -1,0 +1,157 @@
+# The link check, stated as cases: the documents of a small workspace and the
+# findings a docsys package must report on them. Every docsys package, in any
+# language, runs these cases and passes them; the cases, not any one package,
+# define what the rules do.
+#
+# A case:
+#   name      what it shows
+#   config    the workspace's docsys.yaml (default: `version: 1`)
+#   files     each file of the workspace, by path, and its text (default: none); the
+#             workspace is a git repository in which none of them is committed yet
+#   history   optional, for a rule about commits: the commits made first, in order.
+#             A commit has a `message`; `files`, each path with its text, or null to
+#             delete it; a `label`, whose commit id replaces `${label}` in the config;
+#             a `branch` to switch to (created from the current one) before it
+#             commits, and to stay on; or, instead of files, a `merge` of a branch
+#             into the current one. The first commit is on `main`
+#   branch    the branch the workspace ends on (default: the one the last commit was
+#             made on)
+#   detached  `true` to end with HEAD detached at that branch's tip
+#   findings  what the check reports, in order: by path, then line, then position
+#             in the line (a suite may state another order in its own header); each
+#             finding is its rule, its path and its line, and its message ends with
+#             a fix
+#
+# The broken links live in strings here, not in Markdown files, so this repository
+# holds no document that its own link check would fail.
+
+rules:
+  links/resolve:
+    severity: error
+    statement: >-
+      Every relative link in a document resolves to a file or folder that exists,
+      read from the document's own folder.
+
+cases:
+  - name: a link to an existing sibling
+    files:
+      docs/a.md: "See [x](other.md).\n"
+      docs/other.md: ""
+    findings: []
+
+  - name: a link up and over, resolved from the document's folder
+    files:
+      docs/sub/a.md: "[x](../other.md)\n"
+      docs/other.md: ""
+    findings: []
+
+  - name: a link to a folder that exists
+    files:
+      docs/a.md: "[x](../src/)\n"
+      src/code.py: ""
+    findings: []
+
+  - name: a link to a file that is not a document
+    files:
+      docs/a.md: "[licence](../LICENSE)\n"
+      LICENSE: ""
+    findings: []
+
+  - name: a broken link is reported on its line
+    files:
+      docs/a.md: "ok\n\nSee [x](missing.md).\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 3 }
+
+  - name: an anchor is dropped before resolving
+    files:
+      docs/a.md: "[x](other.md#part)\n"
+      docs/other.md: ""
+    findings: []
+
+  - name: a broken link with an anchor is still broken
+    files:
+      docs/a.md: "[x](gone.md#part)\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+
+  - name: a link title is dropped
+    files:
+      docs/a.md: "[x](other.md \"Title\")\n"
+      docs/other.md: ""
+    findings: []
+
+  - name: http, https, mailto and same-document anchors are not resolved
+    files:
+      docs/a.md: "[a](http://x.org) [b](https://x.org) [c](mailto:a@b.c) [d](#here)\n"
+    findings: []
+
+  - name: a fill-in placeholder is not a link
+    files:
+      docs/a.md: "[x](<path>) [y](…)\n"
+    findings: []
+
+  - name: two broken links on one line are both reported
+    files:
+      docs/a.md: "[x](m1.md) [y](m2.md)\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+
+  - name: findings come in path order
+    files:
+      b.md: "[x](gone.md)\n"
+      a/z.md: "[x](gone.md)\n"
+      a.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: a.md, line: 1 }
+      - { rule: links/resolve, path: a/z.md, line: 1 }
+      - { rule: links/resolve, path: b.md, line: 1 }
+
+  - name: a document the scope excludes is not checked
+    config: |
+      version: 1
+      scope:
+        exclude:
+          legacy/: predates docsys; awaiting review
+    files:
+      legacy/old.md: "[x](gone.md)\n"
+      docs/a.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+
+  - name: a document the scope includes back is checked
+    config: |
+      version: 1
+      scope:
+        exclude:
+          legacy/: predates docsys; awaiting review
+        include:
+          - legacy/revised.md
+    files:
+      legacy/old.md: "[x](gone.md)\n"
+      legacy/revised.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: legacy/revised.md, line: 1 }
+
+  - name: a link may point at a document the scope excludes
+    config: |
+      version: 1
+      scope:
+        exclude:
+          legacy/: predates docsys; awaiting review
+    files:
+      docs/a.md: "[x](../legacy/old.md)\n"
+      legacy/old.md: ""
+    findings: []
+
+  - name: a file git ignores is not a document
+    files:
+      .gitignore: "build/\n"
+      build/notes.md: "[x](gone.md)\n"
+    findings: []
+
+  - name: only Markdown files are read
+    files:
+      notes.txt: "[x](gone.md)\n"
+    findings: []
