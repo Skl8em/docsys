@@ -14,7 +14,7 @@ status: draft
 
 It is a Python package that a project declares as a development dependency.
 It installs, finds its workspace — the nearest directory holding `docsys.yaml`, or the one `--workspace` names — and reads that file, whose keys the documentation system's [`docsys.yaml` reference](https://github.com/Skl8em/documentality/blob/main/codifying/docsys-configuration.md) lists.
-Its checks are being extracted, one at a time and test first, from the `scripts/` folder of the documentation system's repository; the link, slug, ULID, fixity and phase-ledger checks are the ones extracted so far, and `docsys check` runs none of them until the runner is.
+Its checks are being extracted, one at a time and test first, from the `scripts/` folder of the documentation system's repository; the link, slug, ULID, fixity, phase-ledger and phase-state checks are the ones extracted so far, and `docsys check` runs none of them until the runner is.
 
 A document is a Markdown file of the workspace that git tracks, or would track once added, and that the scope in `docsys.yaml` governs.
 Each check's rules are stated in [`conformance/`](conformance/), as the documents of a small workspace and the findings expected on them, so that any `docsys` package, in any language, can be held to them.
