@@ -1,0 +1,528 @@
+# The phase-state check, stated as cases (see links.yaml for the format of a case).
+#
+# The ledger (see ledger.yaml) declares where the project is. This check reads every
+# other place that says so, and fails where one disagrees:
+#
+#   - folders: a numbered phase has its folder, `<phases.root>/<era>/<phases.folder>`,
+#     and no phase folder exists that the ledger does not list;
+#   - tables: each phase row of a configured table carries the marker the ledger's
+#     status gives it, a number the ledger has not given is refused, the current phase
+#     has a row, and a row pattern that matches no row is an error and not a pass;
+#   - mentions: no document in scope names, by number, a phase above the highest the
+#     ledger has numbered (unstarted work is named, never numbered). A frozen record
+#     is not read: it says what was true when it froze and cannot be edited, so a
+#     finding in it could never be cleared. The era name "Phase II" is not a number;
+#   - status: the file of `phases.status` has exactly one status line, and it names
+#     the current phase;
+#   - `phase:` fields: each names a numbered phase of the ledger, and none is behind
+#     the last closed phase unless the ledger lists it under `lagging:`; an allowance
+#     that is no longer needed, or whose document has no `phase:`, is itself reported.
+#
+# The cases share the text of their files by YAML anchor and alias (`&ledger`,
+# `*ledger`); the first case, which has them all, defines them.
+#
+# It verifies that the places agree, not that any of them is true. A project with no
+# `phases` section keeps no ledger and the check does not run. When the ledger is
+# missing or breaks its own rules there is nothing to compare, and that is reported
+# once, here, where the ledger check reports it in full. A finding is on the line it
+# is about; one about a whole file (no row, no status line) is on line 1; one about a
+# folder is on the ledger's line for the phase, or on the folder when it is the ledger
+# that does not list it. A frozen record is one whose `status` is accepted, done or
+# stable (see hashes.yaml).
+
+rules:
+  phase-state/ledger:
+    severity: error
+    statement: >-
+      The ledger exists and breaks none of its own rules, so that there is something
+      to compare the other places with.
+  phase-state/folder:
+    severity: error
+    statement: >-
+      Every numbered phase has a folder, in the era the ledger gives it, and no phase
+      folder is missing from the ledger.
+  phase-state/table:
+    severity: error
+    statement: >-
+      Each phase row of a configured table carries the marker of its ledger status;
+      only a planned phase is unnumbered; a number is one the ledger has given; the
+      current phase has a row; and the row pattern matches at least one row.
+  phase-state/mention:
+    severity: error
+    statement: >-
+      No document names, by number, a phase above the highest the ledger numbers.
+  phase-state/status:
+    severity: error
+    statement: >-
+      The file holding the status line has exactly one, and it names the current phase.
+  phase-state/field:
+    severity: error
+    statement: >-
+      A document's `phase:` names a numbered phase of the ledger, in the ledger's
+      format, and is not behind the last closed phase unless the ledger lists the
+      document under `lagging:`.
+  phase-state/lagging:
+    severity: error
+    statement: >-
+      A document listed under `lagging:` is still behind the last closed phase and has
+      a `phase:`; the allowance is otherwise removed. Reported on the ledger.
+
+cases:
+  - name: every place agrees with the ledger
+    config: &config |
+      version: 1
+      phases:
+        ledger: phases.yaml
+        root: phases
+        folder: 'phase-{number:02d}-{name}'
+        field: '{number:02d}-{name}'
+        markers: {done: done, current: in progress, planned: unnumbered}
+        tables:
+          - path: roadmap.md
+            row: '^\| \*\*(?:(?P<number>\d+) — )?[^*]+\*\*(?: \*\((?P<marker>[^)]*)\)\*)?'
+        status:
+          path: README.md
+          line: '^\*\*v\S+ \(Phase (?P<number>\d+) (?:in progress|complete)\)\*\*'
+        mention: '\b[Pp]hases?[ -](?P<number>\d+)'
+    files:
+      phases.yaml: &ledger |
+        phases:
+          - {number: 1, name: start, era: first, status: done}
+          - {number: 2, name: build, era: second, status: done}
+          - {number: 3, name: harden, era: second, status: current}
+          - {name: deploy, era: second, status: planned}
+      roadmap.md: &roadmap |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(done — closed late)* | x |
+        | **03 — Harden** *(in progress — T1 done)* | x |
+        | **Deploy** *(unnumbered — see below)* | x |
+      README.md: &readme "# R\n\n**v1.0 (Phase 3 in progress)** — what it is.\n"
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+    findings: []
+
+  - name: a project with no phases section keeps no ledger, and nothing is compared
+    files:
+      a.md: "Phase 9 will come.\n"
+    findings: []
+
+  # --- the ledger ---
+
+  - name: a ledger that does not exist
+    config: *config
+    files:
+      roadmap.md: *roadmap
+      README.md: *readme
+    findings:
+      - { rule: phase-state/ledger, path: docsys.yaml, line: 1 }
+
+  - name: a ledger that breaks its own rules is not compared with
+    config: *config
+    files:
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+          - {number: 2, name: build, era: second, status: current}
+    findings:
+      - { rule: phase-state/ledger, path: phases.yaml, line: 1 }
+
+  # --- folders ---
+
+  - name: a done phase without its folder
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+    findings:
+      - { rule: phase-state/folder, path: phases.yaml, line: 3 }
+
+  - name: a folder the ledger does not list
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases/second/phase-04-deploy/README.md: "x\n"
+    findings:
+      - { rule: phase-state/folder, path: phases/second/phase-04-deploy, line: 1 }
+
+  - name: a folder under the wrong era
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases/first/phase-02-build/README.md: "x\n"
+    findings:
+      - { rule: phase-state/folder, path: phases.yaml, line: 3 }
+      - { rule: phase-state/folder, path: phases/first/phase-02-build, line: 1 }
+
+  # --- tables ---
+
+  - name: the current phase marked done
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(done — closed late)* | x |
+        | **03 — Harden** *(done)* | x |
+        | **Deploy** *(unnumbered — see below)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 5 }
+
+  - name: a done phase marked with a word the ledger does not use
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(next)* | x |
+        | **03 — Harden** *(in progress — T1 done)* | x |
+        | **Deploy** *(unnumbered — see below)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 4 }
+
+  - name: a planned phase that a table numbers
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(done)* | x |
+        | **03 — Harden** *(in progress)* | x |
+        | **04 — Deploy** *(unnumbered)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 6 }
+
+  - name: an unnumbered row that is not marked planned
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(done)* | x |
+        | **03 — Harden** *(in progress)* | x |
+        | **Deploy** *(done)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 6 }
+
+  - name: a row with no status marker
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** | x |
+        | **03 — Harden** *(in progress)* | x |
+        | **Deploy** *(unnumbered)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 4 }
+
+  - name: the current phase has no row
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: |
+        | Phase | Aim |
+        |---|---|
+        | **01 — Start** *(done)* | x |
+        | **02 — Build** *(done)* | x |
+        | **Deploy** *(unnumbered)* | x |
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 1 }
+
+  - name: a row pattern that matches no row is not a pass
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      roadmap.md: "| Phase |\n|---|\n| 03 Harden | x |\n"
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 1 }
+
+  - name: a table that is not a document of the workspace
+    config: *config
+    files:
+      phases.yaml: *ledger
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+    findings:
+      - { rule: phase-state/table, path: roadmap.md, line: 1 }
+
+  # --- mentions ---
+
+  - name: a mention of a numbered phase, and the era name "Phase II"
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "Phase 3 builds on Phase 2. Designing Phase II follows.\n"
+    findings: []
+
+  - name: a range written with a leading zero
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "Phases 01–03 are recorded.\n"
+    findings: []
+
+  - name: a phase named by number before it is numbered
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "intro\nPhase 4 will deploy it.\n"
+    findings:
+      - { rule: phase-state/mention, path: a.md, line: 2 }
+
+  - name: a folder-style forward name
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "see phase-04-deploy\n"
+    findings:
+      - { rule: phase-state/mention, path: a.md, line: 1 }
+
+  - name: a frozen record quoting a forward number is not read
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      frozen.md: "---\nstatus: done\n---\n\"Phase 4 will ...\" is the example.\n"
+    findings: []
+
+  - name: the same sentence in a living document is reported
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      living.md: "---\nstatus: draft\n---\n\"Phase 4 will ...\" is the example.\n"
+    findings:
+      - { rule: phase-state/mention, path: living.md, line: 4 }
+
+  # --- the status line ---
+
+  - name: the status line names a closed phase
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      README.md: "# R\n\n**v1.0 (Phase 2 complete)** — what it is.\n"
+    findings:
+      - { rule: phase-state/status, path: README.md, line: 3 }
+
+  - name: no status line
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      README.md: "# R\n\nNothing here.\n"
+    findings:
+      - { rule: phase-state/status, path: README.md, line: 1 }
+
+  - name: two status lines, reported on the second
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      README.md: "# R\n\n**v1.0 (Phase 3 in progress)** — now.\n\n**v0.9 (Phase 2 complete)** — before.\n"
+    findings:
+      - { rule: phase-state/status, path: README.md, line: 5 }
+
+  - name: a status file that is not a document of the workspace
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+    findings:
+      - { rule: phase-state/status, path: README.md, line: 1 }
+
+  # --- `phase:` fields ---
+
+  - name: fields at the current phase and at the last done phase
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "---\nphase: 03-harden\n---\n"
+      b.md: "---\nphase: 02-build\n---\n"
+    findings: []
+
+  - name: a field ahead of the current phase
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "---\ntitle: a\nphase: 04-deploy\n---\n"
+    findings:
+      - { rule: phase-state/field, path: a.md, line: 3 }
+
+  - name: a field that is not in the ledger's format
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      a.md: "---\nphase: 3-harden\n---\n"
+    findings:
+      - { rule: phase-state/field, path: a.md, line: 2 }
+
+  - name: a field behind the last done phase
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      old.md: "---\nphase: 01-start\n---\n"
+    findings:
+      - { rule: phase-state/field, path: old.md, line: 2 }
+
+  - name: a field the ledger allows to lag, with its reason
+    config: *config
+    files:
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases.yaml: &lagging_ledger |
+        phases:
+          - {number: 1, name: start, era: first, status: done}
+          - {number: 2, name: build, era: second, status: done}
+          - {number: 3, name: harden, era: second, status: current}
+          - {name: deploy, era: second, status: planned}
+        lagging:
+          - {path: old.md, reason: not re-read since phase 1}
+      old.md: "---\nphase: 01-start\n---\n"
+    findings: []
+
+  - name: an allowance for a document that no longer lags
+    config: *config
+    files:
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases.yaml: *lagging_ledger
+      old.md: "---\nphase: 02-build\n---\n"
+    findings:
+      - { rule: phase-state/lagging, path: phases.yaml, line: 7 }
+
+  - name: an allowance for a document with no phase field
+    config: *config
+    files:
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases.yaml: *lagging_ledger
+      old.md: "---\ntitle: old\n---\n"
+    findings:
+      - { rule: phase-state/lagging, path: phases.yaml, line: 7 }
