@@ -1,0 +1,115 @@
+# The fixity check, stated as cases (see links.yaml for the format of a case).
+#
+# A frozen record carries a `hash:` seal over its own content, so that it can be
+# verified wherever it is copied to. The seal is a SHA-256 of a canonical form: the
+# text read as UTF-8 with CRLF and CR as LF and split at the frontmatter fences; the
+# frontmatter without its `hash:` lines, each line stripped of trailing whitespace,
+# blank lines dropped and the rest sorted, so that reordering keys changes nothing;
+# the body stripped of trailing whitespace per line and of blank lines at both ends;
+# and the text `<frontmatter>\n---\n<body>\n`, hashed as UTF-8 and written
+# `sha256:<64 lowercase hex>`. That definition is the contract: the seals in these
+# cases are the ones the documentation system's `scripts/hash_seal.py` mints.
+#
+# A record is frozen when it is a project's diachronic record that has closed: its
+# `view` is `diachronic`, its `provenance.type` is `project` with an id that is not a
+# `<...>` placeholder (a template's specimen), and its `status` is accepted, done or
+# stable. A document with a seal is verified whether or not it is frozen, and whether
+# or not its YAML can be read: the seal is defined over lines, not over parsed YAML.
+# A document with no frontmatter block, or an unterminated one, has no seal to read;
+# a frozen-looking document whose YAML cannot be read is left to the frontmatter
+# check.
+
+rules:
+  hashes/seal:
+    severity: error
+    statement: >-
+      A document's `hash:` is the seal of its present content. A mismatch means a
+      frozen record changed: revert the change, or re-freeze it deliberately.
+  hashes/unsealed:
+    severity: "off"
+    statement: >-
+      A frozen record carries no seal. Sealing is optional, so this is information a
+      project asks for, not a failure.
+
+cases:
+  - name: an intact seal verifies
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: done\nhash: sha256:948296b84f043cc423cbe7e129122f7b9d0df7e162e28179cdff20197aca3ecd\n---\n\nBody of the record.\n"
+    findings: []
+
+  - name: the seal does not depend on the order of the keys, trailing whitespace, blank lines or line endings
+    files:
+      docs/a.md: "---\r\nstatus: done  \r\nprovenance: { type: project, id: some-phase }\r\nview: diachronic\r\nhash: sha256:948296b84f043cc423cbe7e129122f7b9d0df7e162e28179cdff20197aca3ecd\r\n\r\ntitle: A closed record\r\n---\r\n\r\n\r\nBody of the record.   \r\n\r\n"
+    findings: []
+
+  - name: a body edited after sealing
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: done\nhash: sha256:948296b84f043cc423cbe7e129122f7b9d0df7e162e28179cdff20197aca3ecd\n---\n\nBody of the record, edited.\n"
+    findings:
+      - { rule: hashes/seal, path: docs/a.md, line: 6 }
+
+  - name: a frontmatter field edited after sealing
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: stable\nhash: sha256:948296b84f043cc423cbe7e129122f7b9d0df7e162e28179cdff20197aca3ecd\n---\n\nBody of the record.\n"
+    findings:
+      - { rule: hashes/seal, path: docs/a.md, line: 6 }
+
+  - name: an empty seal does not verify
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: done\nhash:\n---\n\nBody of the record.\n"
+    findings:
+      - { rule: hashes/seal, path: docs/a.md, line: 6 }
+
+  - name: a document that is not frozen is verified when it carries a seal
+    files:
+      docs/d.md: "---\ntitle: A draft\nstatus: draft\nhash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n\nDraft body.\n"
+      docs/ok.md: "---\ntitle: A draft\nstatus: draft\nhash: sha256:e7d8e9e58eb523fc276c6d5a987c34e21b2edce364b95c562419d378af595435\n---\n\nDraft body.\n"
+    findings:
+      - { rule: hashes/seal, path: docs/d.md, line: 4 }
+
+  - name: a seal is verified though the YAML around it cannot be read
+    files:
+      docs/a.md: "---\nview: [\nhash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n\nBody.\n"
+    findings:
+      - { rule: hashes/seal, path: docs/a.md, line: 3 }
+
+  - name: a frozen record with no seal
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: accepted\n---\n\nBody of the record.\n"
+    findings:
+      - { rule: hashes/unsealed, path: docs/a.md, line: 1 }
+
+  - name: a record that is not frozen, and has no seal, is left alone
+    files:
+      docs/a.md: "---\ntitle: A closed record\nview: diachronic\nprovenance: { type: project, id: some-phase }\nstatus: draft\n---\n\nBody of the record.\n"
+    findings: []
+
+  - name: a diachronic record that is not a project's is not frozen
+    files:
+      docs/a.md: "---\nview: diachronic\nprovenance: { type: function, id: writing }\nstatus: done\n---\n"
+    findings: []
+
+  - name: a record whose view is not diachronic is not frozen
+    files:
+      docs/a.md: "---\nview: synchronic\nprovenance: { type: project, id: some-phase }\nstatus: done\n---\n"
+    findings: []
+
+  - name: a template's specimen, with a placeholder id, is not a frozen record
+    files:
+      docs/a.md: "---\nview: diachronic\nprovenance: { type: project, id: <phase-or-project-id> }\nstatus: done\n---\n"
+    findings: []
+
+  - name: a document without frontmatter has no seal to read
+    files:
+      docs/a.md: "No frontmatter here.\n"
+    findings: []
+
+  - name: an unterminated frontmatter block is left to the frontmatter check
+    files:
+      docs/a.md: "---\nview: diachronic\nstatus: done\n"
+    findings: []
+
+  - name: an unsealed document whose YAML cannot be read is left to the frontmatter check
+    files:
+      docs/a.md: "---\nview: [\nstatus: done\n---\n"
+    findings: []
