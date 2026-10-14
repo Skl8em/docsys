@@ -1,0 +1,274 @@
+# The ULID check, stated as cases (see links.yaml for the format of a case).
+#
+# A record's `id` is a ULID, unique across the documents; a record without one is
+# permitted, and is then named by its filename stem, as the pre-ULID convention
+# already does. `supersedes` and `superseded-by` name records by `id` or by stem, and
+# the references between records must hold: they resolve, they are kept symmetric,
+# no record supersedes itself, and a chain of `superseded-by` never loops back. When
+# the project keeps a decision register (`register:` in docsys.yaml), each row must
+# agree with the record it links to.
+#
+# A reference that is a `<...>` placeholder is a template's fill-in, not a reference.
+# A document whose frontmatter cannot be read is not checked; the frontmatter check
+# reports it, once. A finding is on the line of the key it is about; the findings of
+# a case are in the order of their path, then their line.
+
+rules:
+  ulids/form:
+    severity: error
+    statement: >-
+      A record's `id`, when it has one, is a valid ULID: 26 characters of Crockford's
+      base32.
+  ulids/unique:
+    severity: error
+    statement: >-
+      An `id` belongs to one record; the second record to carry it is the one reported.
+  ulids/resolve:
+    severity: error
+    statement: >-
+      Every `supersedes` and `superseded-by` reference names the `id` or the filename
+      stem of a record.
+  ulids/self:
+    severity: error
+    statement: >-
+      A record does not supersede itself.
+  ulids/symmetric:
+    severity: error
+    statement: >-
+      If A supersedes B, B's `superseded-by` names A back, and the other way round.
+  ulids/cycle:
+    severity: error
+    statement: >-
+      A chain of `superseded-by` does not loop back on itself (A, then B, then A): a
+      cycle leaves no record that binds. It is reported once, on its smallest path.
+  ulids/register:
+    severity: error
+    statement: >-
+      The decision register is a tracked document whose rows the configured shape
+      finds, and each row agrees with the record it links to: a row marked superseded
+      names the record that `superseded-by` names, and a plain row finds it unset.
+
+cases:
+  # --- the ids themselves ---
+
+  - name: two distinct valid ids
+    files:
+      a.md: "---\nid: 01K0000000000000000000000A\n---\n"
+      b.md: "---\nid: 01K0000000000000000000000B\n---\n"
+    findings: []
+
+  - name: a record without an id is permitted
+    files:
+      a.md: "---\ntitle: a\n---\n"
+      b.md: "---\nid:\n---\n"
+      c.md: "no frontmatter\n"
+    findings: []
+
+  - name: an id that is not a ULID
+    files:
+      a.md: "---\ntitle: a\nid: not-a-ulid\n---\n"
+    findings:
+      - { rule: ulids/form, path: a.md, line: 3 }
+
+  - name: an id that is not a string
+    files:
+      a.md: "---\nid: [x]\n---\n"
+    findings:
+      - { rule: ulids/form, path: a.md, line: 2 }
+
+  - name: a duplicate id is reported on the second record, which names the first
+    files:
+      a.md: "---\nid: 01K0000000000000000000000A\n---\n"
+      b.md: "---\ntitle: b\nid: 01K0000000000000000000000A\n---\n"
+    findings:
+      - { rule: ulids/unique, path: b.md, line: 3 }
+
+  - name: a document whose frontmatter cannot be read is left to the frontmatter check
+    files:
+      a.md: "---\nid: [\n---\n"
+    findings: []
+
+  # --- the references between records ---
+
+  - name: a dangling supersedes
+    files:
+      a.md: "---\nsupersedes: no-such-record\n---\n"
+    findings:
+      - { rule: ulids/resolve, path: a.md, line: 2 }
+
+  - name: a dangling superseded-by, by ULID
+    files:
+      a.md: "---\nid: 01K0000000000000000000000A\nsuperseded-by: 01K0000000000000000000000Z\n---\n"
+    findings:
+      - { rule: ulids/resolve, path: a.md, line: 3 }
+
+  - name: a symmetric pair, named by filename stem
+    files:
+      a.md: "---\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\n---\n"
+    findings: []
+
+  - name: a symmetric pair, named by id
+    files:
+      a.md: "---\nid: 01K0000000000000000000000A\nsuperseded-by: 01K0000000000000000000000B\n---\n"
+      b.md: "---\nid: 01K0000000000000000000000B\nsupersedes: 01K0000000000000000000000A\n---\n"
+    findings: []
+
+  - name: A supersedes B and B is silent
+    files:
+      a.md: "---\nsupersedes: b\n---\n"
+      b.md: "---\ntitle: b\n---\n"
+    findings:
+      - { rule: ulids/symmetric, path: a.md, line: 2 }
+
+  - name: a record with no frontmatter is named by its stem, and is silent
+    files:
+      a.md: "---\nsupersedes: b\n---\n"
+      b.md: "text\n"
+    findings:
+      - { rule: ulids/symmetric, path: a.md, line: 2 }
+
+  - name: a placeholder is not a reference
+    files:
+      a.md: "---\nsupersedes: <ADR-XXX or null>\nsuperseded-by: null\n---\n"
+    findings: []
+
+  - name: a list of references, one of them dangling
+    files:
+      a.md: "---\nsupersedes: [b, no-such]\n---\n"
+      b.md: "---\nsuperseded-by: a\n---\n"
+    findings:
+      - { rule: ulids/resolve, path: a.md, line: 2 }
+
+  - name: a record that supersedes itself, in both fields
+    files:
+      a.md: "---\nsupersedes: a\nsuperseded-by: a\n---\n"
+    findings:
+      - { rule: ulids/self, path: a.md, line: 2 }
+      - { rule: ulids/self, path: a.md, line: 3 }
+
+  - name: a self-reference by id, in one field, is not also an asymmetry
+    files:
+      a.md: "---\nid: 01K0000000000000000000000A\nsupersedes: 01K0000000000000000000000A\n---\n"
+    findings:
+      - { rule: ulids/self, path: a.md, line: 3 }
+
+  - name: a mutual pair is a cycle, reported once
+    files:
+      a.md: "---\nsupersedes: b\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\nsuperseded-by: a\n---\n"
+    findings:
+      - { rule: ulids/cycle, path: a.md, line: 3 }
+
+  - name: a longer cycle, A then B then C then A, is reported once
+    files:
+      a.md: "---\nsupersedes: c\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\nsuperseded-by: c\n---\n"
+      c.md: "---\nsupersedes: b\nsuperseded-by: a\n---\n"
+    findings:
+      - { rule: ulids/cycle, path: a.md, line: 3 }
+
+  - name: a chain that ends is not a cycle
+    files:
+      a.md: "---\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\nsuperseded-by: c\n---\n"
+      c.md: "---\nsupersedes: b\n---\n"
+    findings: []
+
+  - name: two records superseded by the same one is not a cycle
+    files:
+      a.md: "---\nsuperseded-by: c\n---\n"
+      b.md: "---\nsuperseded-by: c\n---\n"
+      c.md: "---\nsupersedes: [a, b]\n---\n"
+    findings: []
+
+  # --- the decision register ---
+
+  - name: a register that agrees with the records
+    config: &register |
+      version: 1
+      register:
+        path: register.md
+        columns: 5
+        ordinal_column: 0
+        status_column: 4
+        ordinal_pattern: '^\[(\d+)\]\(([^)]+)\)$'
+        superseded_pattern: 'superseded by (\d+)'
+    files:
+      register.md: &rows "| # | Decision | Phase | Date | Status |\n| --- | --- | --- | --- | --- |\n| [001](a.md) | A | p1 | 2026-01-01 | superseded by 002 |\n| [002](b.md) | B | p1 | 2026-01-02 | accepted |\n"
+      a.md: "---\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\n---\n"
+    findings: []
+
+  - name: a row marked superseded, and a record that does not say so
+    config: *register
+    files:
+      register.md: *rows
+      a.md: "---\ntitle: a\n---\n"
+      b.md: "---\ntitle: b\n---\n"
+    findings:
+      - { rule: ulids/register, path: a.md, line: 1 }
+
+  - name: a plain row, and a record that is superseded
+    config: *register
+    files:
+      register.md: "| # | Decision | Phase | Date | Status |\n| --- | --- | --- | --- | --- |\n| [001](a.md) | A | p1 | 2026-01-01 | superseded by 002 |\n| [002](b.md) | B | p1 | 2026-01-02 | accepted |\n| [003](c.md) | C | p1 | 2026-01-03 | accepted |\n"
+      a.md: "---\nsuperseded-by: b\n---\n"
+      b.md: "---\ntitle: b\nsupersedes: a\nsuperseded-by: c\n---\n"
+      c.md: "---\nsupersedes: b\n---\n"
+    findings:
+      - { rule: ulids/register, path: b.md, line: 4 }
+
+  - name: another shape of register, in another folder, agrees with the records
+    config: &other_register |
+      version: 1
+      register:
+        path: log/index.md
+        columns: 4
+        ordinal_column: 0
+        status_column: 3
+        ordinal_pattern: '^\[(\d+)\]\(([^)]+)\)$'
+        superseded_pattern: 'replaced by (\d+)'
+    files:
+      log/index.md: &other_rows "| # | Decision | Date | Status |\n| --- | --- | --- | --- |\n| [1](../a.md) | A | 2026-01-01 | replaced by 2 |\n| [2](../b.md) | B | 2026-01-02 | accepted |\n"
+      a.md: "---\nsuperseded-by: b\n---\n"
+      b.md: "---\nsupersedes: a\n---\n"
+    findings: []
+
+  - name: another shape of register, and a record that disagrees
+    config: *other_register
+    files:
+      log/index.md: *other_rows
+      a.md: "---\ntitle: a\n---\n"
+      b.md: "---\ntitle: b\n---\n"
+    findings:
+      - { rule: ulids/register, path: a.md, line: 1 }
+
+  - name: a register with no decision rows at all is not a pass
+    config: *register
+    files:
+      register.md: "# Decisions\n\nNothing here yet.\n"
+    findings:
+      - { rule: ulids/register, path: register.md, line: 1 }
+
+  - name: a register whose rows have the wrong number of cells for the shape
+    config: *register
+    files:
+      register.md: "| # | Decision | Status |\n| --- | --- | --- |\n| [001](a.md) | A | accepted |\n"
+      a.md: "---\ntitle: a\n---\n"
+    findings:
+      - { rule: ulids/register, path: register.md, line: 1 }
+
+  - name: a register whose ordinal cells do not match the shape
+    config: *register
+    files:
+      register.md: "| # | Decision | Phase | Date | Status |\n| --- | --- | --- | --- | --- |\n| 001 | A | p1 | 2026-01-01 | accepted |\n"
+    findings:
+      - { rule: ulids/register, path: register.md, line: 1 }
+
+  - name: a register path that is no document of the workspace is reported on docsys.yaml
+    config: *register
+    files:
+      a.md: "---\ntitle: a\n---\n"
+    findings:
+      - { rule: ulids/register, path: docsys.yaml, line: 1 }
