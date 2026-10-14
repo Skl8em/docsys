@@ -7,7 +7,7 @@ so the data and the code cannot drift apart."""
 
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeGuard
 
@@ -35,11 +35,23 @@ CHECKS: dict[str, tuple[Check, tuple[Rule, ...]]] = {
 
 
 @dataclass(frozen=True)
+class Commit:
+    message: str
+    files: dict[str, str | None] = field(default_factory=dict)  # path -> text, None deletes it
+    label: str | None = None  # `${label}` in the config becomes this commit's id
+    branch: str | None = None  # switch to it (created if absent) before committing, and stay
+    merge: str | None = None  # merge this branch into the current one, instead of committing files
+
+
+@dataclass(frozen=True)
 class Case:
     name: str
     config: str
     files: dict[str, str]
     findings: list[tuple[str, str, int]]  # (rule, path, line)
+    history: list[Commit] = field(default_factory=list)
+    branch: str | None = None  # the branch the workspace ends on (default: the last commit's)
+    detached: bool = False  # HEAD detached at the end
 
 
 # --- reading a suite file ----------------------------------------------------------
@@ -68,6 +80,26 @@ def _mapping(value: object, where: str) -> dict[str, object]:
     return {str(key): item for key, item in value.items()}
 
 
+def _commit(raw: object) -> Commit:
+    item = _mapping(raw, "history item")
+    files: dict[str, str | None] = {}
+    for path, text in _mapping(item.get("files", {}), "history files").items():
+        assert text is None or isinstance(text, str), f"history files.{path} must be a string or null"
+        files[path] = text
+    strings = {key: item.get(key) for key in ("message", "label", "branch", "merge")}
+    for key, value in strings.items():
+        assert value is None or isinstance(value, str), f"history {key} must be a string"
+    message = strings["message"]
+    assert isinstance(message, str), "a history item needs a message"
+    return Commit(
+        message=message,
+        files=files,
+        label=strings["label"] if isinstance(strings["label"], str) else None,
+        branch=strings["branch"] if isinstance(strings["branch"], str) else None,
+        merge=strings["merge"] if isinstance(strings["merge"], str) else None,
+    )
+
+
 def load_suite(name: str) -> tuple[dict[str, dict[str, str]], list[Case]]:
     """The rules a suite file declares, and its cases."""
     with open(SUITE / f"{name}.yaml", encoding="utf-8") as fh:
@@ -88,15 +120,69 @@ def load_suite(name: str) -> tuple[dict[str, dict[str, str]], list[Case]]:
         assert isinstance(config, str), "config must be the text of docsys.yaml"
         name_ = case["name"]
         assert isinstance(name_, str), "name must be a string"
-        cases.append(Case(name=name_, config=config, files=_strings(case["files"], "files"), findings=findings))
+        raw_history = case.get("history", [])
+        assert _is_list(raw_history), "history must be a list"
+        branch = case.get("branch")
+        assert branch is None or isinstance(branch, str), "branch must be a string"
+        cases.append(
+            Case(
+                name=name_,
+                config=config,
+                files=_strings(case.get("files", {}), "files"),
+                findings=findings,
+                history=[_commit(item) for item in raw_history],
+                branch=branch,
+                detached=case.get("detached") == "true",
+            )
+        )
     return rules, cases
 
 
+def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=docsys", "-c", "user.email=docsys@example.invalid", *args],
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+
+
+def switch(root: Path, branch: str) -> None:
+    exists = git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False).returncode == 0
+    git(root, "switch", "-q", *([] if exists else ["-c"]), branch)
+
+
 def build(root: Path, case: Case) -> Path:
-    """The case's workspace: its files and its docsys.yaml, in a new git repository."""
+    """The case's workspace, in a new git repository: its history, if it has one, made
+    commit by commit; then its docsys.yaml and its files, none of them committed."""
     root.mkdir()
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    (root / CONFIG_NAME).write_text(case.config, encoding="utf-8")
+    git(root, "init", "-q", "-b", "main")
+    ids: dict[str, str] = {}
+    for commit in case.history:
+        if commit.branch:
+            switch(root, commit.branch)
+        if commit.merge:
+            git(root, "merge", "-q", "--no-ff", "-m", commit.message, commit.merge)
+        else:
+            for path, text in commit.files.items():
+                if text is None:
+                    git(root, "rm", "-q", path)
+                else:
+                    target = root / path
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(text, encoding="utf-8")
+                    git(root, "add", path)
+            git(root, "commit", "-q", "-m", commit.message)
+        if commit.label:
+            ids[commit.label] = git(root, "rev-parse", "HEAD").stdout.strip()
+    if case.detached:
+        git(root, "switch", "-q", "--detach")
+    elif case.branch:
+        switch(root, case.branch)
+    config = case.config
+    for label, commit_id in ids.items():
+        config = config.replace("${" + label + "}", commit_id)
+    (root / CONFIG_NAME).write_text(config, encoding="utf-8")
     for path, text in case.files.items():
         target = root / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +209,7 @@ def test_the_check_reports_what_the_case_states(name: str, case: Case, tmp_path:
 
 
 def _git_output(root: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
+    return git(root, *args).stdout.strip()
 
 
 def test_a_case_can_have_a_history(tmp_path: Path) -> None:
