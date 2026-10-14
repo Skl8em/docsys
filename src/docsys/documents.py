@@ -21,6 +21,11 @@ class DocumentsError(Exception):
     """The documents cannot be listed; the message carries its `fix:`."""
 
 
+def files(workspace: Path, pathspec: str = "*") -> list[str]:
+    """The workspace's files git tracks or would track, matching the pathspec."""
+    raise NotImplementedError
+
+
 def documents(workspace: Path, scope: Scope) -> list[str]:
     """The workspace's documents in scope, as workspace-relative POSIX paths, sorted."""
     try:
