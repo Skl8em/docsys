@@ -6,11 +6,21 @@
 # A case:
 #   name      what it shows
 #   config    the workspace's docsys.yaml (default: `version: 1`)
-#   files     each file of the workspace, by path, and its text; the workspace is a
-#             git repository in which none of them is committed yet
+#   files     each file of the workspace, by path, and its text (default: none); the
+#             workspace is a git repository in which none of them is committed yet
+#   history   optional, for a rule about commits: the commits made first, in order.
+#             A commit has a `message`; `files`, each path with its text, or null to
+#             delete it; a `label`, whose commit id replaces `${label}` in the config;
+#             a `branch` to switch to (created from the current one) before it
+#             commits, and to stay on; or, instead of files, a `merge` of a branch
+#             into the current one. The first commit is on `main`
+#   branch    the branch the workspace ends on (default: the one the last commit was
+#             made on)
+#   detached  `true` to end with HEAD detached at that branch's tip
 #   findings  what the check reports, in order: by path, then line, then position
-#             in the line; each finding is its rule, its path and its line, and its
-#             message names the link's target and ends with a fix
+#             in the line (a suite may state another order in its own header); each
+#             finding is its rule, its path and its line, and its message ends with
+#             a fix
 #
 # The broken links live in strings here, not in Markdown files, so this repository
 # holds no document that its own link check would fail.
