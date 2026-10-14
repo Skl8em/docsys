@@ -122,6 +122,37 @@ def test_the_check_reports_what_the_case_states(name: str, case: Case, tmp_path:
         assert str(finding).endswith(f" — fix: {finding.fix}")
 
 
+def _git_output(root: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def test_a_case_can_have_a_history(tmp_path: Path) -> None:
+    case = Case(
+        name="history",
+        config="version: 1\nanchor: ${anchor}\n",
+        files={"b.md": "b\n"},
+        findings=[],
+        history=[
+            Commit(message="one", files={"a.md": "a\n"}, label="anchor"),
+            Commit(message="two", files={"a.md": None, "c.md": "c\n"}, branch="side"),
+            Commit(message="three", files={"d.md": "d\n"}, branch="main"),
+            Commit(message="merge side", merge="side"),
+        ],
+        branch="side",
+    )
+    root = build(tmp_path / "workspace", case)
+    anchor = _git_output(root, "rev-list", "--max-parents=0", "HEAD")
+    assert _git_output(root, "branch", "--show-current") == "side"
+    assert _git_output(root, "log", "--format=%s", "--first-parent", "main") == "merge side\nthree\none"
+    assert not (root / "a.md").exists()  # deleted on `side`, which is checked out
+    assert (root / "b.md").read_text(encoding="utf-8") == "b\n"  # written after the history, uncommitted
+    assert f"anchor: {anchor}" in (root / "docsys.yaml").read_text(encoding="utf-8")
+    detached = build(
+        tmp_path / "detached", Case(name="d", config="", files={}, findings=[], history=case.history, detached=True)
+    )
+    assert _git_output(detached, "branch", "--show-current") == ""
+
+
 @pytest.mark.parametrize("name", list(CHECKS))
 def test_the_package_reports_the_rules_the_suite_declares(name: str) -> None:
     rules, _ = load_suite(name)
