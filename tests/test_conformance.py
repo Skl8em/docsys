@@ -13,7 +13,7 @@ from typing import TypeGuard
 
 import pytest
 
-from docsys.checks import links, slugs, ulids
+from docsys.checks import hashes, links, slugs, ulids
 from docsys.config import Config, load_config
 from docsys.findings import Finding, Rule
 from docsys.workspace import CONFIG_NAME
@@ -26,6 +26,7 @@ Check = Callable[[Path, Config], list[Finding]]
 # conformance/<name>.yaml -> the check it states, and the rules that check reports.
 CHECKS: dict[str, tuple[Check, tuple[Rule, ...]]] = {
     "links": (links.check, links.RULES),
+    "hashes": (hashes.check, hashes.RULES),
     "slugs": (slugs.check, slugs.RULES),
     "ulids": (ulids.check, ulids.RULES),
 }
