@@ -1,0 +1,101 @@
+# The slug check, stated as cases (see links.yaml for the format of a case).
+#
+# A document that declares a `slug` is named after it: ADR-028's convention is
+# opt-in, so a document without one is not checked. A document whose frontmatter
+# cannot be read is not checked either; the frontmatter check reports it, once.
+
+rules:
+  slugs/type:
+    severity: error
+    statement: >-
+      A slug is a string.
+  slugs/form:
+    severity: error
+    statement: >-
+      A slug is hyphen-cased: lowercase letters and digits, joined by single hyphens.
+  slugs/filename:
+    severity: error
+    statement: >-
+      A document's filename stem is its slug, or the slug followed by a hyphen and
+      the document's own `id` — the only form in which an identifier may be in a
+      filename, slug first.
+
+cases:
+  - name: a stem equal to the slug
+    files:
+      docs/foo.md: "---\nslug: foo\n---\n"
+    findings: []
+
+  - name: the stem with the document's own id after the slug
+    files:
+      docs/foo-01K00000000000000000000000.md: "---\nslug: foo\nid: 01K00000000000000000000000\n---\n"
+    findings: []
+
+  - name: no slug, so nothing to check
+    files:
+      docs/Anything_Goes.md: "---\ntitle: x\n---\n"
+      docs/No_Frontmatter.md: "text\n"
+    findings: []
+
+  - name: an empty slug is no slug
+    files:
+      docs/Anything_Goes.md: "---\nslug:\n---\n"
+    findings: []
+
+  - name: a slug that is not a string
+    files:
+      docs/foo.md: "---\nslug: [foo]\n---\n"
+    findings:
+      - { rule: slugs/type, path: docs/foo.md, line: 2 }
+
+  - name: a slug that is not hyphen-cased
+    files:
+      docs/Foo_Bar.md: "---\ntitle: x\nslug: Foo_Bar\n---\n"
+    findings:
+      - { rule: slugs/form, path: docs/Foo_Bar.md, line: 3 }
+
+  - name: a double hyphen is not hyphen-cased
+    files:
+      docs/foo--bar.md: "---\nslug: foo--bar\n---\n"
+    findings:
+      - { rule: slugs/form, path: docs/foo--bar.md, line: 2 }
+
+  - name: a stem that is not the slug
+    files:
+      docs/other.md: "---\nslug: foo\n---\n"
+    findings:
+      - { rule: slugs/filename, path: docs/other.md, line: 2 }
+
+  - name: the id after the slug is refused when the document has no id
+    files:
+      docs/foo-01K00000000000000000000000.md: "---\nslug: foo\n---\n"
+    findings:
+      - { rule: slugs/filename, path: docs/foo-01K00000000000000000000000.md, line: 2 }
+
+  - name: the id after the slug is refused when it is another document's
+    files:
+      docs/foo-01K99999999999999999999999.md: "---\nslug: foo\nid: 01K00000000000000000000000\n---\n"
+    findings:
+      - { rule: slugs/filename, path: docs/foo-01K99999999999999999999999.md, line: 2 }
+
+  - name: both the form and the filename are reported
+    files:
+      docs/Foo_Bar-x.md: "---\nslug: Foo_Bar\n---\n"
+    findings:
+      - { rule: slugs/form, path: docs/Foo_Bar-x.md, line: 2 }
+      - { rule: slugs/filename, path: docs/Foo_Bar-x.md, line: 2 }
+
+  - name: frontmatter that cannot be read is left to the frontmatter check
+    files:
+      docs/other.md: "---\nslug: [unclosed\n---\n"
+    findings: []
+
+  - name: findings come in path order
+    files:
+      b.md: "---\nslug: x\n---\n"
+      a/z.md: "---\nslug: x\n---\n"
+      a.md: "---\nslug: x\n---\n"
+    findings:
+      - { rule: slugs/filename, path: a.md, line: 2 }
+      - { rule: slugs/filename, path: a/z.md, line: 2 }
+      - { rule: slugs/filename, path: b.md, line: 2 }

@@ -1,0 +1,392 @@
+# The phase ledger check, stated as cases (see links.yaml for the format of a case).
+#
+# A project that keeps phases declares them once, in a ledger: an ordered list, each
+# phase a name, an era and a status of `done`, `current` or `planned`, and optionally
+# a `lagging:` list of the documents whose `phase:` may stay behind the last closed
+# phase. `phases.ledger` in docsys.yaml says where the ledger is; a project with no
+# `phases` section keeps none, and the check does not run. The check reads the ledger
+# alone: that every other place agrees with it is the phase-state check's.
+#
+# The ledger is read as YAML with every scalar a string. A finding is on the line of
+# the entry or the key it is about; one about the list as a whole (`exactly one
+# current`) is on the line of `phases`. When an entry is malformed the findings are
+# those about entries, and about `lagging`, alone: the rules about order and numbering
+# read well-formed entries.
+#
+# Every case that has a ledger uses this `phases` section, whose other keys are the
+# phase-state check's.
+
+rules:
+  ledger/missing:
+    severity: error
+    statement: >-
+      The ledger `phases.ledger` names exists. Reported on docsys.yaml, where the path
+      is written.
+  ledger/yaml:
+    severity: error
+    statement: >-
+      The ledger is valid YAML.
+  ledger/shape:
+    severity: error
+    statement: >-
+      The ledger's vocabulary is closed. The top level is a mapping of `phases`, a
+      non-empty list, and `lagging`, a list. An entry is a mapping of `number`,
+      `name`, `era` and `status`, of which `name`, `era` and `status` are required. A
+      `lagging` entry is a mapping of `path` and `reason`, with a `path`.
+  ledger/form:
+    severity: error
+    statement: >-
+      A phase's `name` and `era` are hyphen-cased, its `status` is `done`, `current`
+      or `planned`, and its `number`, when it has one, is a positive integer without
+      a leading zero.
+  ledger/number:
+    severity: error
+    statement: >-
+      A `done` or `current` phase has a number and a `planned` one has none, because
+      unstarted work is never numbered. The numbers count 1, 2, 3… in list order,
+      with no gap; the first that breaks the count is reported.
+  ledger/unique:
+    severity: error
+    statement: >-
+      A phase name appears once, and so does a `lagging` path; the second is reported.
+  ledger/current:
+    severity: error
+    statement: >-
+      Exactly one phase is `current`.
+  ledger/order:
+    severity: error
+    statement: >-
+      The list is every `done` phase, then the `current` one, then every `planned`
+      one; the first entry out of place is reported.
+  ledger/lagging:
+    severity: error
+    statement: >-
+      A `lagging` entry says why the document may lag: its `reason` is not empty.
+
+cases:
+  - name: a well-formed ledger
+    config: &config |
+      version: 1
+      phases:
+        ledger: phases.yaml
+        root: phases
+        folder: 'phase-{number:02d}-{name}'
+        field: '{number:02d}-{name}'
+        markers: {done: done, current: in progress, planned: unnumbered}
+        tables:
+          - path: roadmap.md
+            row: '^\| \*\*(?:(?P<number>\d+) — )?[^*]+\*\*(?: \*\((?P<marker>[^)]*)\)\*)?'
+        status:
+          path: README.md
+          line: '^\*\*v\S+ \(Phase (?P<number>\d+) (?:in progress|complete)\)\*\*'
+        mention: '\b[Pp]hases?[ -](?P<number>\d+)'
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: sketch, era: naive, status: done}
+          - {number: 2, name: rework, era: second, status: done}
+          - {number: 3, name: harden, era: second, status: current}
+          - {name: deploy, era: second, status: planned}
+    findings: []
+
+  - name: a ledger with only a current phase
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+    findings: []
+
+  - name: a project with no phases section keeps no ledger
+    files:
+      phases.yaml: "- not a ledger\n"
+    findings: []
+
+  - name: a ledger that does not exist
+    config: *config
+    files:
+      README.md: "text\n"
+    findings:
+      - { rule: ledger/missing, path: docsys.yaml, line: 1 }
+
+  - name: a ledger that is not valid YAML
+    config: *config
+    files:
+      phases.yaml: "phases:\n\t- x\n"
+    findings:
+      - { rule: ledger/yaml, path: phases.yaml, line: 2 }
+
+  - name: a ledger that is not a mapping
+    config: *config
+    files:
+      phases.yaml: |
+        - phases
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 1 }
+
+  - name: an unknown top-level key
+    config: *config
+    files:
+      phases.yaml: |
+        eras: []
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 1 }
+
+  - name: no phases
+    config: *config
+    files:
+      phases.yaml: |
+        lagging: []
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 1 }
+
+  - name: an empty list of phases
+    config: *config
+    files:
+      phases.yaml: |
+        # the project's phases
+        phases: []
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 2 }
+
+  - name: an entry that is not a mapping
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - sketch
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 2 }
+
+  - name: an unknown key in an entry
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: done}
+          - {number: 2, name: next, era: first, status: current, title: Next}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 3 }
+
+  - name: an entry without a status
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 2 }
+
+  - name: a status outside the vocabulary
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: closed}
+          - {number: 2, name: next, era: first, status: current}
+    findings:
+      - { rule: ledger/form, path: phases.yaml, line: 2 }
+
+  - name: a name that is not hyphen-cased
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: Start_1, era: first, status: current}
+    findings:
+      - { rule: ledger/form, path: phases.yaml, line: 2 }
+
+  - name: an era that is not hyphen-cased
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: "First Era", status: current}
+    findings:
+      - { rule: ledger/form, path: phases.yaml, line: 2 }
+
+  - name: a number that is not an integer
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: one, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/form, path: phases.yaml, line: 2 }
+
+  - name: a zero-padded number
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 01, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/form, path: phases.yaml, line: 2 }
+
+  - name: a planned phase with a number
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+          - {number: 2, name: later, era: first, status: planned}
+    findings:
+      - { rule: ledger/number, path: phases.yaml, line: 3 }
+
+  - name: a done phase without a number
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {name: start, era: first, status: done}
+          - {number: 1, name: next, era: first, status: current}
+    findings:
+      - { rule: ledger/number, path: phases.yaml, line: 2 }
+
+  - name: numbers that skip one
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: sketch, era: naive, status: done}
+          - {number: 2, name: rework, era: second, status: done}
+          - {number: 4, name: harden, era: second, status: current}
+    findings:
+      - { rule: ledger/number, path: phases.yaml, line: 4 }
+
+  - name: numbers that do not start at 1
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 2, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/number, path: phases.yaml, line: 2 }
+
+  - name: a duplicate name, reported on the second
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: done}
+          - {number: 2, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/unique, path: phases.yaml, line: 3 }
+
+  - name: two current phases
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+          - {number: 2, name: next, era: first, status: current}
+    findings:
+      - { rule: ledger/current, path: phases.yaml, line: 1 }
+
+  - name: no current phase
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: done}
+          - {name: later, era: first, status: planned}
+    findings:
+      - { rule: ledger/current, path: phases.yaml, line: 1 }
+
+  - name: a planned phase before the current one
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {name: later, era: first, status: planned}
+          - {number: 1, name: start, era: first, status: current}
+    findings:
+      - { rule: ledger/order, path: phases.yaml, line: 3 }
+
+  - name: a malformed entry hides the findings about order and numbering
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current, title: Start}
+          - {number: 2, name: next, era: first, status: current}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 2 }
+
+  - name: a document allowed to lag, with its reason
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {path: docs/a.md, reason: re-read owed at the close}
+    findings: []
+
+  - name: a lagging list that is not a list
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging: {path: docs/a.md}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 3 }
+
+  - name: a lagging entry without a path
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {reason: r}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 4 }
+
+  - name: a lagging entry with an unknown key
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {path: docs/a.md, reason: r, until: "13"}
+    findings:
+      - { rule: ledger/shape, path: phases.yaml, line: 4 }
+
+  - name: a lagging entry without a reason
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {path: docs/a.md}
+    findings:
+      - { rule: ledger/lagging, path: phases.yaml, line: 4 }
+
+  - name: a lagging entry with an empty reason
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {path: docs/a.md, reason: " "}
+    findings:
+      - { rule: ledger/lagging, path: phases.yaml, line: 4 }
+
+  - name: a document listed twice as lagging, reported on the second
+    config: *config
+    files:
+      phases.yaml: |
+        phases:
+          - {number: 1, name: start, era: first, status: current}
+        lagging:
+          - {path: docs/a.md, reason: r}
+          - {path: docs/a.md, reason: s}
+    findings:
+      - { rule: ledger/unique, path: phases.yaml, line: 5 }

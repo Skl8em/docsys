@@ -43,7 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
     print(
-        "docsys: this version implements no checks yet — fix: run the project's own gate until the checks are ported",
+        "docsys: this version runs no checks yet — fix: run the project's own gate until the runner is ported",
         file=sys.stderr,
     )
     return exitcodes.ERROR

@@ -1,0 +1,97 @@
+# The frontmatter vocabulary: what a document's frontmatter may say, and the values it
+# may say it with. The single edit surface of the frontmatter check; docsys reads this
+# file at run time, through the strict YAML loader (scalars stay strings: a bare `yes`
+# or `no` under a plain safe_load would compile to a boolean and silently break
+# `error_enums.constitutive`).
+#
+# The vocabulary is closed: a field is legal only if it is `required`, a key of
+# `optional_fields` (each carrying its own rationale: the schema fails to load if one
+# is missing or empty, so that declaring a field and justifying it are one act), or a
+# `root_only_fields` entry. Settled rules are errors; what is still undecided, in
+# `warn_enums`, is a warning.
+#
+# `register` is derived, never stored: `constitutive == yes ? govern :
+# direction_of_fit(force)`, and storing it is an error. `direction_of_fit` must
+# partition `force` exactly, or the schema fails to load.
+
+required:
+  - title
+  - force
+  - intention
+  - constitutive
+  - view
+  - provenance
+  - audience
+  - reader
+  - status
+
+error_enums:
+  view: [synchronic, diachronic]
+  reader: [H, M, H+M]
+  force:
+    [orient, explain, describe, instruct, teach, recommend, mandate, commit,
+     propose, decide, prove, account]
+  provenance_type: [function, project]
+  intention: [state, formative, suasive, affective]
+  constitutive: [yes, no]
+
+audience_base_roles: [user, contributor, decider]
+
+# Legal only on the root document (`root_document` in docsys.yaml, `README.md` by
+# default): required there, forbidden everywhere else.
+root_only_fields: [axis, dominant-community]
+
+# Computed, never authored: documented here so the derivation rule lives beside the
+# vocabulary it depends on, not just in code.
+derived_fields:
+  register: "constitutive == yes ? govern : direction_of_fit(force) — derived, never stored. Storing it is an error."
+  diataxis: "force x intention, where the register is know or do."
+  direction-of-fit: "fixed by force — see the table below."
+
+# Must partition `force` exactly; the schema is refused otherwise (the register cannot
+# be derived from an incomplete or overlapping table).
+direction_of_fit:
+  know: [orient, explain, describe, prove, account]
+  do: [instruct, teach, recommend, mandate, commit, propose, decide]
+
+# Every key here MUST carry a non-empty rationale string as its value. One field, one
+# reason, no bundling several fields under one description.
+optional_fields:
+  hash: >-
+    sha256:<64 lowercase hex> — the fixity seal of a frozen record, verified by the
+    fixity check.
+  verb: >-
+    generative verb; stored only when it diverges from the tuple (force,
+    intention).
+  id: ULID (ADR-028) — the stable machine identity, independent of the filename.
+  slug: the filename stem — the human-readable identity paired with `id`.
+  concerns: the activities a document governs, distinct from its provenance.
+  distance: recipient distance — how far the reader sits from the act.
+  power: the sanction the recipient holds over the act.
+  retention: >-
+    the reified retention rule — how long a record is kept live before
+    archival.
+  supersedes: >-
+    the record(s) this one supersedes — record chaining (supersede, not edit).
+  superseded-by: >-
+    the record(s) that supersede this one — the inverse of `supersedes`, kept
+    symmetric.
+  phase: >-
+    the construction phase this document was written for, or is current as of
+    — distinct from `provenance`, which names the activity, not the phase.
+  pin: >-
+    a submodule commit pin — the VCS fixity bond for a cross-project reference.
+
+hash_pattern: "^sha256:[0-9a-f]{64}$"
+
+# Current practice, not a ruling — see `still_open` below. WARNING, not ERROR.
+warn_enums:
+  distance: [initiated, novice, peer, near, far]
+  power: [none, low, holds]
+  status: [draft, stable, deprecated, accepted, done, in-progress, planned]
+
+still_open:
+  - "distance/power allowed values — the sets above are the current practice, not a ruling"
+  - "status vocabulary — current documents vs frozen records use different words"
+  - "deriving `constitutive` from force x power — deferred by decision"
+  - "the shape of `concerns`"

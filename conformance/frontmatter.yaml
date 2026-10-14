@@ -1,0 +1,306 @@
+# The frontmatter check, stated as cases (see links.yaml for the format of a case).
+#
+# Every document in scope opens with a YAML frontmatter block, and the block is judged by
+# the vocabulary the package ships (src/docsys/schema/frontmatter-rules.yaml): the required
+# fields, the enumerations, the optional fields each declared with a reason, the fields of
+# the root document alone, and the table that derives the register from a force. Settled
+# rules are errors; what the schema lists as still undecided is a warning.
+#
+# The block is read as real YAML in which scalars stay strings and only null resolves (a
+# bare `yes` is the word, not a boolean), and in which a duplicate key is an error.
+# This is the check that reports a frontmatter that cannot be read; every other check
+# leaves such a document to it. The root document is the one `root_document` names in
+# docsys.yaml, `README.md` by default. A finding is on the line of the key it is about,
+# or line 1 for a field that is absent, and the findings come in the order of their path,
+# then their line. In these cases a document is nine fields on lines 2 to 10 (title,
+# force, intention, constitutive, view, provenance, audience, reader, status), and a field
+# added after them is on line 11.
+
+rules:
+  frontmatter/yaml:
+    severity: error
+    statement: >-
+      The frontmatter is valid YAML: real YAML, with scalars kept as strings and a duplicate key, at any depth, an error.
+  frontmatter/missing-block:
+    severity: error
+    statement: >-
+      A document opens with a frontmatter block.
+  frontmatter/required:
+    severity: error
+    statement: >-
+      Every required field is present and not empty.
+  frontmatter/provenance:
+    severity: error
+    statement: >-
+      `provenance` is a mapping of `type`, one of `function` or `project`, and `id`.
+  frontmatter/enum:
+    severity: error
+    statement: >-
+      `view`, `reader`, `intention`, `constitutive` and each component of a (composite) `force` are within their enumerations.
+  frontmatter/register:
+    severity: error
+    statement: >-
+      `register` is derived from `constitutive` and the force's direction of fit, and is never stored.
+  frontmatter/hash:
+    severity: error
+    statement: >-
+      A `hash`, when present, is a well-formed seal: `sha256:` and 64 lowercase hex digits.
+  frontmatter/audience:
+    severity: error
+    statement: >-
+      `audience` is a non-empty list.
+  frontmatter/audience-role:
+    severity: warning
+    statement: >-
+      An audience role outside the base roles is a refinement of the project's, reported and not failed.
+  frontmatter/root-only:
+    severity: error
+    statement: >-
+      The root-only fields are on the root document, and only there.
+  frontmatter/open:
+    severity: warning
+    statement: >-
+      A value outside the current practice for a field still undecided (`distance`, `power`, `status`): reported, not failed.
+  frontmatter/vocabulary:
+    severity: error
+    statement: >-
+      A field is legal only if it is required, declared with its reason as optional, or root-only.
+
+cases:
+  # --- what a fixed point of the grammar must pass ---
+
+  - name: a document that passes
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: a block-sequence audience
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience:\n  - contributor\n  - decider\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: an inline comment after an enum value
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic  # the present state\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: a quoted comma inside an inline map
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: \"steering, type: bogus\" }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: constitutive yes and no stay strings, where YAML 1.1 reads booleans
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: yes\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: a composite force
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: recommend+explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings: []
+
+  - name: a declared optional field
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\nslug: fixture\n---\n\nBody.\n"
+    findings: []
+
+  - name: a well-formed seal
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\nhash: sha256:0000000000000000000000000000000000000000000000000000000000000000\n---\n\nBody.\n"
+    findings: []
+
+  # --- YAML the first hand-rolled parser read wrongly, in either direction ---
+
+  - name: a field hidden by indentation is invalid YAML
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n  review: pending\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/yaml, path: docs/a.md, line: 11 }
+
+  - name: a plain scalar folded onto the next line is one value
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\n  diachronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/enum, path: docs/a.md, line: 6 }
+
+  - name: a duplicate key, the last one valid
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: bogus\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/yaml, path: docs/a.md, line: 7 }
+
+  - name: a duplicate key inside an inline map
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: bogus, id: steering, type: function }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/yaml, path: docs/a.md, line: 7 }
+
+  - name: an unterminated quoted string
+    files:
+      docs/a.md: "---\ntitle: \"Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/yaml, path: docs/a.md, line: 10 }
+
+  # --- the document as a whole ---
+
+  - name: a document with no frontmatter block
+    files:
+      docs/a.md: "text\n"
+    findings:
+      - { rule: frontmatter/missing-block, path: docs/a.md, line: 1 }
+
+  - name: a required field missing
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/required, path: docs/a.md, line: 1 }
+
+  - name: a required field empty
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus:\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/required, path: docs/a.md, line: 1 }
+
+  # --- provenance ---
+
+  - name: a provenance that is a block mapping with an unknown type
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance:\n  type: bogus\n  id: steering\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/provenance, path: docs/a.md, line: 7 }
+
+  - name: a provenance that is not a mapping
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: steering\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/provenance, path: docs/a.md, line: 7 }
+
+  - name: a provenance without an id
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/provenance, path: docs/a.md, line: 7 }
+
+  # --- enumerations ---
+
+  - name: a view outside its enumeration
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: dynamic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/enum, path: docs/a.md, line: 6 }
+
+  - name: an intention outside its enumeration
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: bogus\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/enum, path: docs/a.md, line: 4 }
+
+  - name: a reader outside its enumeration
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: robots\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/enum, path: docs/a.md, line: 9 }
+
+  - name: a force component that is no force
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain+bogus\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/enum, path: docs/a.md, line: 3 }
+
+  # --- derived and sealed fields ---
+
+  - name: a register that is stored, though it is derived
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\nregister: know\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/register, path: docs/a.md, line: 11 }
+
+  - name: a seal that is not well-formed
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\nhash: sha256:xyz\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/hash, path: docs/a.md, line: 11 }
+
+  # --- audience ---
+
+  - name: an audience that is empty is missing and not a list of roles
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: []\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/required, path: docs/a.md, line: 1 }
+      - { rule: frontmatter/audience, path: docs/a.md, line: 8 }
+
+  - name: an audience that is not a list
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: contributor\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/audience, path: docs/a.md, line: 8 }
+
+  - name: an audience role beyond the base roles is a refinement, a warning
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor, auditor]\nreader: H+M\nstatus: draft\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/audience-role, path: docs/a.md, line: 8 }
+
+  # --- the root document ---
+
+  - name: a root-only field on a document that is not the root
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\naxis: provenance\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/root-only, path: docs/a.md, line: 11 }
+
+  - name: the root document with both root-only fields
+    files:
+      README.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\naxis: provenance\ndominant-community: writing\n---\n\nBody.\n"
+    findings: []
+
+  - name: the root document without a root-only field
+    files:
+      README.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\naxis: provenance\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/root-only, path: README.md, line: 1 }
+
+  - name: the root document is the one the configuration names
+    config: |
+      version: 1
+      root_document: docs/index.md
+    files:
+      docs/index.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\naxis: provenance\ndominant-community: writing\n---\n\nBody.\n"
+      README.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\naxis: provenance\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/root-only, path: README.md, line: 11 }
+
+  # --- what is still undecided is a warning ---
+
+  - name: a status outside the current practice
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: weird\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/open, path: docs/a.md, line: 10 }
+
+  - name: a distance outside the current practice
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\ndistance: orbit\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/open, path: docs/a.md, line: 11 }
+
+  # --- the closed vocabulary ---
+
+  - name: a field the vocabulary does not declare
+    files:
+      docs/a.md: "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\nprovenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\nowner: me\n---\n\nBody.\n"
+    findings:
+      - { rule: frontmatter/vocabulary, path: docs/a.md, line: 11 }
+
+  # --- scope ---
+
+  - name: a document outside the scope is not checked
+    config: |
+      version: 1
+      scope:
+        exclude:
+          docs/raw/: raw upstream, no frontmatter
+    files:
+      docs/raw/x.md: "text\n"
+    findings: []
