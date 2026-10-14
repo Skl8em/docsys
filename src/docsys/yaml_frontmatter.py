@@ -139,7 +139,35 @@ class YamlError(ValueError):
 def load_located(text: str) -> Located | None:
     """A whole YAML document with the line of every value, scalars read as
     `StrictLoader` reads them; None when the document is empty."""
-    raise NotImplementedError
+    loader = StrictLoader(text)
+    try:
+        root = loader.get_single_node()
+        return None if root is None else _locate(loader, root, root.start_mark.line + 1)
+    except yaml.MarkedYAMLError as exc:
+        mark = exc.problem_mark or exc.context_mark
+        raise YamlError(mark.line + 1 if mark else 1, exc.problem or str(exc)) from None
+    finally:
+        loader.dispose()
+
+
+def _locate(loader: StrictLoader, node: yaml.Node, line: int) -> Located:
+    if isinstance(node, yaml.SequenceNode):
+        return Located([_locate(loader, item, item.start_mark.line + 1) for item in node.value], line)
+    if isinstance(node, yaml.MappingNode):
+        mapping: dict[str, Located] = {}
+        for key_node, value_node in node.value:
+            key: object = loader.construct_object(key_node, deep=True)
+            key_line = key_node.start_mark.line + 1
+            if not isinstance(key, str):
+                raise YamlError(key_line, f"key {key!r} is not a string")
+            if key in mapping:
+                raise YamlError(key_line, f"duplicate key `{key}`")
+            mapping[key] = _locate(loader, value_node, key_line)
+        return Located(mapping, line)
+    scalar: object = loader.construct_object(node, deep=True)
+    if scalar is not None and not isinstance(scalar, str):
+        raise YamlError(line, f"{scalar!r} is not a string: write it as a quoted string")
+    return Located(scalar, line)
 
 
 def load_yaml(stream: str | IO[str]) -> object:
