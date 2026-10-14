@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from docsys.config import Scope
-from docsys.documents import DocumentsError, documents
+from docsys.documents import DocumentsError, documents, files
 
 EVERYTHING = Scope(include=[], exclude={})
 
@@ -75,3 +75,22 @@ def test_a_workspace_outside_git_is_refused_with_a_fix(tmp_path: Path) -> None:
     message = str(caught.value)
     assert str(tmp_path) in message
     assert "fix:" in message
+
+
+def test_files_lists_every_kind_of_file_and_none_that_git_ignores(repo: Path) -> None:
+    write(repo, ".gitignore", ".venv/\n")
+    write(repo, "phases/a/README.md")
+    write(repo, "phases/a/data.yaml")
+    write(repo, ".venv/lib/x.md")
+    assert files(repo) == [".gitignore", "phases/a/README.md", "phases/a/data.yaml"]
+
+
+def test_files_can_be_narrowed_by_a_pathspec(repo: Path) -> None:
+    write(repo, "a.md")
+    write(repo, "b.yaml")
+    assert files(repo, "*.yaml") == ["b.yaml"]
+
+
+def test_files_outside_a_git_repository_are_refused(tmp_path: Path) -> None:
+    with pytest.raises(DocumentsError, match="git init"):
+        files(tmp_path)

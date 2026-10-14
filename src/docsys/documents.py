@@ -7,8 +7,9 @@ files from its build output and virtual environments, so a workspace outside a
 git repository is refused, not walked. Of those files, the documents are the ones
 the scope governs (`docsys.config.in_scope`).
 
-    from docsys.documents import documents
+    from docsys.documents import documents, files
     documents(workspace, cfg["scope"])  # ["README.md", "docs/a.md", ...]
+    files(workspace)                    # every such file, whatever its kind
 """
 
 import subprocess
@@ -21,11 +22,24 @@ class DocumentsError(Exception):
     """The documents cannot be listed; the message carries its `fix:`."""
 
 
-def documents(workspace: Path, scope: Scope) -> list[str]:
-    """The workspace's documents in scope, as workspace-relative POSIX paths, sorted."""
+def files(workspace: Path, pathspec: str = "*") -> list[str]:
+    """The workspace's files git tracks or would track once added, matching the
+    pathspec, as workspace-relative POSIX paths, sorted: never one `.gitignore`
+    excludes, and never one inside a submodule."""
     try:
         result = subprocess.run(
-            ["git", "-C", str(workspace), "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"],
+            [
+                "git",
+                "-C",
+                str(workspace),
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                pathspec,
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -40,4 +54,9 @@ def documents(workspace: Path, scope: Scope) -> list[str]:
             f"fix: run `git init` there; docsys reads the list of documents from git"
         )
     paths = {path for path in result.stdout.split("\0") if path}
-    return sorted(path for path in paths if (workspace / path).is_file() and in_scope(scope, path))
+    return sorted(path for path in paths if (workspace / path).is_file())
+
+
+def documents(workspace: Path, scope: Scope) -> list[str]:
+    """The workspace's documents in scope, as workspace-relative POSIX paths, sorted."""
+    return [path for path in files(workspace, "*.md") if in_scope(scope, path)]
