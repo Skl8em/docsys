@@ -4,6 +4,7 @@ to `error`, `warning` or `off` — for a rule that exists."""
 
 import pytest
 
+from docsys import tools
 from docsys.checks import frontmatter, hashes, ledger, links, paired_change, phase_state, slugs, ulids
 from docsys.config import ConfigError, validate
 from docsys.rules import RULES, severities
@@ -16,6 +17,7 @@ CHECK_RULES = (
     paired_change.RULES,
     phase_state.RULES,
     slugs.RULES,
+    tools.RULES,
     ulids.RULES,
 )
 
