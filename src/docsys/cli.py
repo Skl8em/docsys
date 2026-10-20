@@ -7,6 +7,8 @@ from collections.abc import Sequence
 
 from . import __version__, exitcodes
 from .config import ConfigError, load_config
+from .documents import DocumentsError
+from .runner import run
 from .workspace import WorkspaceError, resolve_workspace
 
 
@@ -38,12 +40,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         return exitcodes.ERROR
     print(f"docsys {__version__}: workspace {workspace}", file=sys.stderr)
     try:
-        load_config(workspace)
-    except ConfigError as exc:
+        report = run(workspace, load_config(workspace))
+    except (ConfigError, DocumentsError) as exc:
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
-    print(
-        "docsys: this version runs no checks yet — fix: run the project's own gate until the runner is ported",
-        file=sys.stderr,
-    )
-    return exitcodes.ERROR
+    for finding in report.errors:
+        print(finding)
+    if report.warnings:
+        print(f"warnings ({len(report.warnings)}), reported without failing the run:")
+        for finding in report.warnings:
+            print(f"  {finding}")
+    counts = f"{_count(len(report.errors), 'error')}, {_count(len(report.warnings), 'warning')}"
+    if report.errors:
+        print(f"docsys check failed: {counts}")
+        return exitcodes.FINDINGS
+    print(f"docsys check passed: {counts}")
+    return exitcodes.OK
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"

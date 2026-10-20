@@ -15,13 +15,15 @@ from docsys.config import load_config
 from docsys.runner import run
 from docsys.workspace import CONFIG_NAME
 
-DOCUMENT = (
+FIELDS = (
     "---\ntitle: Fixture\nforce: explain\nintention: state\nconstitutive: no\nview: synchronic\n"
-    "provenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n---\n\n"
+    "provenance: { type: function, id: steering }\naudience: [contributor]\nreader: H+M\nstatus: draft\n"
 )
-CLEAN = DOCUMENT + "Body.\n"
-BROKEN = DOCUMENT + "A [link](missing.md).\n"
-BROKEN_LINE = 13  # the document is 12 lines of frontmatter and blank, then the body
+ROOT = FIELDS + "axis: provenance\ndominant-community: writing\n---\n\n"  # the root document carries two more
+DOCUMENT = FIELDS + "---\n\n"
+CLEAN = ROOT + "Body.\n"
+BROKEN = ROOT + "A [link](missing.md).\n"
+BROKEN_LINE = 15  # twelve lines of frontmatter and fence, a blank line, then the body
 
 
 def workspace(root: Path, config: str, files: dict[str, str]) -> Path:
@@ -71,7 +73,11 @@ def test_the_configuration_turns_a_rule_off(tmp_path: Path) -> None:
 
 
 def test_a_rule_that_is_off_by_default_reports_once_turned_on(tmp_path: Path) -> None:
-    frozen = CLEAN.replace("status: draft", "status: frozen")
+    frozen = (
+        CLEAN.replace("status: draft", "status: done")
+        .replace("view: synchronic", "view: diachronic")
+        .replace("provenance: { type: function, id: steering }", "provenance: { type: project, id: p1 }")
+    )
     config = "version: 1\nrules:\n  hashes/unsealed: error\n"
     root = workspace(tmp_path / "p", config, {"README.md": frozen})
     assert [f.rule for f in run(root, load_config(root)).errors] == ["hashes/unsealed"]
@@ -87,13 +93,14 @@ def test_a_check_runs_only_when_its_section_is_configured(tmp_path: Path) -> Non
         "  status: {path: README.md, line: '^Phase (?P<number>\\d+)'}\n  mention: 'Phase (?P<number>\\d+)'\n"
     )
     configured = workspace(tmp_path / "with", "version: 1\n" + phases, {"README.md": CLEAN})
-    assert [f.rule for f in run(configured, load_config(configured)).errors] == ["ledger/missing"]
+    assert [f.rule for f in run(configured, load_config(configured)).errors] == ["ledger/missing", "phase-state/ledger"]
     bare = workspace(tmp_path / "without", "version: 1\n", {"README.md": CLEAN})
     assert run(bare, load_config(bare)).errors == []
 
 
 def test_findings_come_in_the_order_of_the_checks_then_of_the_path(tmp_path: Path) -> None:
-    files = {"b.md": BROKEN, "a.md": BROKEN, "c.md": "no frontmatter [x](gone.md)\n"}
+    broken = DOCUMENT + "A [link](missing.md).\n"
+    files = {"README.md": CLEAN, "b.md": broken, "a.md": broken, "c.md": "no frontmatter [x](gone.md)\n"}
     root = workspace(tmp_path / "p", "version: 1\n", files)
     order = [(f.rule, f.path) for f in run(root, load_config(root)).errors]
     assert order == [
