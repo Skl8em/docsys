@@ -11,6 +11,8 @@ the pair is kept symmetric, no record supersedes itself, and no chain of
 to; a register whose configured row shape finds no row is an error, not a pass,
 since it would switch the comparison off without a word.
 
+A reference may name a record the scope excludes: it resolves, and the excluded record,
+which is not checked, is not asked to name it back.
 A `<...>` reference is a template's fill-in and is skipped. A document whose
 frontmatter cannot be read is left to the frontmatter check. Findings come in the
 order of their path, then their line.
@@ -22,7 +24,7 @@ from pathlib import Path, PurePosixPath
 from typing import Final, TypeGuard
 
 from ..config import Config, Register
-from ..documents import documents
+from ..documents import documents, excluded
 from ..findings import Finding, Rule
 from ..ulid import is_ulid
 from ..workspace import CONFIG_NAME
@@ -57,7 +59,7 @@ def check(workspace: Path, config: Config) -> list[Finding]:
             records[path] = load(workspace / path) or {}
         except FrontmatterError:
             continue
-    findings = [*_ids(records), *_references(records)]
+    findings = [*_ids(records), *_references(records, _outside(workspace, config))]
     register = config["register"]
     if register is not None:
         findings.extend(_register(workspace, set(paths), records, register))
@@ -144,7 +146,21 @@ def _find_cycles(successors: dict[str, list[str]]) -> list[list[str]]:
     return cycles
 
 
-def _references(records: Records) -> list[Finding]:
+def _outside(workspace: Path, config: Config) -> set[str]:
+    """How the records the scope excludes are named. A reference to one resolves: an
+    exclusion takes a document out of the checks, not out of the project. It is not
+    checked, so it is not asked to name the reference back."""
+    names: set[str] = set()
+    for item in excluded(workspace, config["scope"]):
+        try:
+            frontmatter = load(workspace / item.path) or {}
+        except FrontmatterError:
+            frontmatter = {}
+        names.add(_identity(item.path, frontmatter))
+    return names
+
+
+def _references(records: Records, outside: set[str]) -> list[Finding]:
     index = {_identity(path, frontmatter): path for path, frontmatter in records.items()}
     findings: list[Finding] = []
     resolved: dict[tuple[str, str], list[str]] = {}  # (path, field) -> the records it names
@@ -156,6 +172,8 @@ def _references(records: Records) -> list[Finding]:
             lines[path, field] = line
             for reference in _references_in(value):
                 target = index.get(reference)
+                if target is None and reference in outside:
+                    continue
                 if target is None:
                     findings.append(
                         Finding(
