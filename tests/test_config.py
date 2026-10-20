@@ -358,12 +358,8 @@ REFUSALS = [
     ),
     pytest.param(setter("tools", None, {"name": "x"}), ["tools", "list"], id="tools that are not a list"),
     pytest.param(setter("tools", None, ["markdownlint"]), ["tools[0]", "name", "command"], id="a tool that is a word"),
-    pytest.param(
-        setter("tools", None, [{"name": "x"}]), ["tools[0].command", "missing"], id="a tool with no command"
-    ),
-    pytest.param(
-        setter("tools", None, [{"command": ["x"]}]), ["tools[0].name", "missing"], id="a tool with no name"
-    ),
+    pytest.param(setter("tools", None, [{"name": "x"}]), ["tools[0].command", "missing"], id="a tool with no command"),
+    pytest.param(setter("tools", None, [{"command": ["x"]}]), ["tools[0].name", "missing"], id="a tool with no name"),
     pytest.param(
         setter("tools", None, [{"name": "x", "command": ["x"], "cwd": "."}]),
         ["tools[0]", "cwd", "unknown"],
@@ -385,7 +381,9 @@ REFUSALS = [
         id="a command written as one string",
     ),
     pytest.param(
-        setter("tools", None, [{"name": "x", "command": []}]), ["tools[0].command", "empty"], id="an empty command"
+        setter("tools", None, [{"name": "x", "command": list[str]()}]),
+        ["tools[0].command", "empty"],
+        id="an empty command",
     ),
     pytest.param(
         setter("tools", None, [{"name": "x", "command": ["a", ""]}]),
