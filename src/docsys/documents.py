@@ -13,9 +13,19 @@ the scope governs (`docsys.config.in_scope`).
 """
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
-from .config import Scope, in_scope
+from .config import Scope, exclusion, in_scope
+
+
+@dataclass(frozen=True)
+class Excluded:
+    """A document the scope leaves out, and the exclusion that took it out."""
+
+    path: str
+    pattern: str
+    reason: str
 
 
 class DocumentsError(Exception):
@@ -60,3 +70,14 @@ def files(workspace: Path, pathspec: str = "*") -> list[str]:
 def documents(workspace: Path, scope: Scope) -> list[str]:
     """The workspace's documents in scope, as workspace-relative POSIX paths, sorted."""
     return [path for path in files(workspace, "*.md") if in_scope(scope, path)]
+
+
+def excluded(workspace: Path, scope: Scope) -> list[Excluded]:
+    """The workspace's documents the scope leaves out, with the first exclusion
+    that took each out, sorted by path: the documents still owed."""
+    left_out: list[Excluded] = []
+    for path in files(workspace, "*.md"):
+        taken = exclusion(scope, path)
+        if taken is not None:
+            left_out.append(Excluded(path, *taken))
+    return left_out

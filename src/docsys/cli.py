@@ -4,9 +4,12 @@ import argparse
 import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from . import __version__, exitcodes
-from .config import ConfigError, load_config
+from .config import Config, ConfigError, load_config
+from .documents import DocumentsError, documents, excluded
+from .runner import run
 from .workspace import WorkspaceError, resolve_workspace
 
 
@@ -26,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace",
         help="the project root holding docsys.yaml (default: the nearest one above the current directory)",
     )
+    report = commands.add_parser("report", help="list the documents the scope leaves out, with their reasons")
+    report.add_argument(
+        "--workspace",
+        help="the project root holding docsys.yaml (default: the nearest one above the current directory)",
+    )
     return parser
 
 
@@ -38,12 +46,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         return exitcodes.ERROR
     print(f"docsys {__version__}: workspace {workspace}", file=sys.stderr)
     try:
-        load_config(workspace)
-    except ConfigError as exc:
+        config = load_config(workspace)
+        if args.command == "report":
+            return _report(workspace, config)
+        report = run(workspace, config)
+    except (ConfigError, DocumentsError) as exc:
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
-    print(
-        "docsys: this version runs no checks yet — fix: run the project's own gate until the runner is ported",
-        file=sys.stderr,
-    )
-    return exitcodes.ERROR
+    for finding in report.errors:
+        print(finding)
+    if report.warnings:
+        print(f"warnings ({len(report.warnings)}), reported without failing the run:")
+        for finding in report.warnings:
+            print(f"  {finding}")
+    counts = f"{_count(len(report.errors), 'error')}, {_count(len(report.warnings), 'warning')}"
+    if report.errors:
+        print(f"docsys check failed: {counts}")
+        return exitcodes.FINDINGS
+    print(f"docsys check passed: {counts}")
+    return exitcodes.OK
+
+
+def _report(workspace: Path, config: Config) -> int:
+    left_out = excluded(workspace, config["scope"])
+    for item in left_out:
+        print(f"{item.path}: {item.reason} (excluded by `{item.pattern}`)")
+    in_scope = len(documents(workspace, config["scope"]))
+    count = f"{len(left_out)} {'document' if len(left_out) == 1 else 'documents'} excluded"
+    print(f"{count if left_out else 'no document is excluded'}, {in_scope} in scope")
+    return exitcodes.OK
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
