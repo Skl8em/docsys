@@ -29,6 +29,7 @@ from typing import Final, TypedDict, TypeGuard
 
 import yaml
 
+from .findings import Severity
 from .workspace import CONFIG_NAME
 from .yaml_frontmatter import load_yaml
 
@@ -89,6 +90,7 @@ class Config(TypedDict):
     register: Register | None
     paired_change: PairedChange | None
     phases: Phases | None
+    rules: dict[str, Severity]  # rule id -> the severity that replaces its default
 
 
 # The formats of docsys.yaml this package reads — part of the cross-package API:
@@ -96,6 +98,8 @@ class Config(TypedDict):
 FORMAT_VERSIONS: Final = ("1",)
 
 DEFAULT_ROOT_DOCUMENT: Final = "README.md"
+SEVERITIES: Final[tuple[Severity, ...]] = ("error", "warning", "off")
+RULE_ID_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$")
 # The keys each section accepts are the fields of its type, in their order.
 TOP_LEVEL: Final = tuple(Config.__annotations__)
 # register.<key> -> number of capture groups its pattern must carry.
@@ -396,6 +400,30 @@ def _phases(value: object) -> Phases:
     )
 
 
+def _severity(value: object) -> Severity | None:
+    for severity in SEVERITIES:
+        if value == severity:
+            return severity
+    return None
+
+
+def _rules(value: object) -> dict[str, Severity]:
+    """Which rules the project turns up or down. Whether each id names a rule is
+    for `docsys.rules.severities`, which knows the checks; this reads the form."""
+    fix = "write each as `<check>/<rule>: error`, `warning` or `off`, under `rules:`"
+    checked: dict[str, Severity] = {}
+    for rule, setting in _mapping(value, "rules", fix).items():
+        if not RULE_ID_RE.match(rule):
+            raise ConfigError(f"`rules.{rule}` is not named `<check>/<rule>` — fix: {fix}.")
+        severity = _severity(setting)
+        if severity is None:
+            raise ConfigError(
+                f"`rules.{rule}` is {setting!r}, which is not a severity — fix: write `error`, `warning` or `off`."
+            )
+        checked[rule] = severity
+    return checked
+
+
 def validate(raw: object) -> Config:
     """Check a loaded configuration and return it normalised: integer keys
     converted, `root_document` and `scope.exclude` defaulted, and every optional
@@ -421,6 +449,7 @@ def validate(raw: object) -> Config:
         register=_register(cfg["register"]) if "register" in cfg else None,
         paired_change=_paired_change(cfg["paired_change"]) if "paired_change" in cfg else None,
         phases=_phases(cfg["phases"]) if "phases" in cfg else None,
+        rules=_rules(cfg.get("rules", {})),
     )
 
 

@@ -57,6 +57,7 @@ FULL: Raw = {
     "register": REGISTER,
     "paired_change": PAIRED_CHANGE,
     "phases": PHASES,
+    "rules": {"links/resolve": "warning", "hashes/unsealed": "error", "frontmatter/open": "off"},
 }
 
 
@@ -138,6 +139,18 @@ def test_a_full_configuration_is_kept_with_integer_keys_converted() -> None:
     assert cfg["paired_change"] == PAIRED_CHANGE
     assert cfg["phases"] is not None
     assert cfg["phases"]["ledger"] == "state/phases.yaml"
+
+
+def test_without_rules_every_rule_keeps_its_default_severity() -> None:
+    assert validate(copy.deepcopy(MINIMAL))["rules"] == {}
+
+
+def test_a_rule_can_be_set_to_error_warning_or_off() -> None:
+    assert validate(copy.deepcopy(FULL))["rules"] == {
+        "links/resolve": "warning",
+        "hashes/unsealed": "error",
+        "frontmatter/open": "off",
+    }
 
 
 def test_validation_does_not_change_its_input() -> None:
@@ -316,6 +329,20 @@ REFUSALS = [
         setter("phases", "mention", r"\bPhase \d+"),
         ["phases.mention", "number"],
         id="a mention pattern without a number group",
+    ),
+    pytest.param(setter("rules", None, ["links/resolve"]), ["rules", "mapping"], id="rules that are not a mapping"),
+    pytest.param(
+        setter("rules", "links/resolve", "loud"),
+        ["rules", "links/resolve", "loud", "error", "warning", "off"],
+        id="a severity that is not one of the three",
+    ),
+    pytest.param(
+        setter("rules", "links/resolve", ["error"]),
+        ["rules", "links/resolve", "error", "warning", "off"],
+        id="a severity that is not a word",
+    ),
+    pytest.param(
+        setter("rules", "links", "error"), ["rules", "links", "<check>/<rule>"], id="a rule named without its check"
     ),
 ]
 
