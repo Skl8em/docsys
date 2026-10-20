@@ -58,6 +58,10 @@ FULL: Raw = {
     "paired_change": PAIRED_CHANGE,
     "phases": PHASES,
     "rules": {"links/resolve": "warning", "hashes/unsealed": "error", "frontmatter/open": "off"},
+    "tools": [
+        {"name": "markdownlint", "command": ["markdownlint-cli2"]},
+        {"name": "spelling", "command": ["codespell", "--quiet-level", "2"]},
+    ],
 }
 
 
@@ -151,6 +155,17 @@ def test_a_rule_can_be_set_to_error_warning_or_off() -> None:
         "hashes/unsealed": "error",
         "frontmatter/open": "off",
     }
+
+
+def test_without_tools_no_external_command_runs() -> None:
+    assert validate(copy.deepcopy(MINIMAL))["tools"] == []
+
+
+def test_tools_keep_their_order_names_and_commands() -> None:
+    assert validate(copy.deepcopy(FULL))["tools"] == [
+        {"name": "markdownlint", "command": ["markdownlint-cli2"]},
+        {"name": "spelling", "command": ["codespell", "--quiet-level", "2"]},
+    ]
 
 
 def test_validation_does_not_change_its_input() -> None:
@@ -340,6 +355,42 @@ REFUSALS = [
         setter("rules", "links/resolve", ["error"]),
         ["rules", "links/resolve", "error", "warning", "off"],
         id="a severity that is not a word",
+    ),
+    pytest.param(setter("tools", None, {"name": "x"}), ["tools", "list"], id="tools that are not a list"),
+    pytest.param(setter("tools", None, ["markdownlint"]), ["tools[0]", "name", "command"], id="a tool that is a word"),
+    pytest.param(
+        setter("tools", None, [{"name": "x"}]), ["tools[0].command", "missing"], id="a tool with no command"
+    ),
+    pytest.param(
+        setter("tools", None, [{"command": ["x"]}]), ["tools[0].name", "missing"], id="a tool with no name"
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "x", "command": ["x"], "cwd": "."}]),
+        ["tools[0]", "cwd", "unknown"],
+        id="a tool with an unknown key",
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "Mark Down", "command": ["x"]}]),
+        ["tools[0].name", "Mark Down", "hyphen"],
+        id="a tool name that is not hyphen-cased",
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "x", "command": ["a"]}, {"name": "x", "command": ["b"]}]),
+        ["tools[1].name", "x", "twice"],
+        id="two tools of one name",
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "x", "command": "markdownlint-cli2 --fix"}]),
+        ["tools[0].command", "list"],
+        id="a command written as one string",
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "x", "command": []}]), ["tools[0].command", "empty"], id="an empty command"
+    ),
+    pytest.param(
+        setter("tools", None, [{"name": "x", "command": ["a", ""]}]),
+        ["tools[0].command", "empty"],
+        id="a command holding an empty word",
     ),
     pytest.param(
         setter("rules", "links", "error"), ["rules", "links", "<check>/<rule>"], id="a rule named without its check"
