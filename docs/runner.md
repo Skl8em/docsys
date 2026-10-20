@@ -60,5 +60,5 @@ The cost is that an `off` rule is still computed; none is known to be expensive,
 ## What a green run does not say
 
 The runner reports findings; it has no opinion on a document no check reads.
-A document outside the scope is not checked, so a run that passes says nothing about the documents the project excluded; `docsys report` lists them.
+A document outside the scope is not checked, so a run that passes says nothing about the documents the project excluded; `docsys report` lists them, with the reason of each exclusion, and is not a gate: it exits `0` however many are excluded, so the count can be watched shrinking without ever blocking a commit.
 A rule at `off` or `warning` does not fail the run, so a project that turns rules down passes by having asked less.
