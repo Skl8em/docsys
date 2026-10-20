@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from docsys import exitcodes
@@ -26,7 +27,7 @@ def python(code: str) -> list[str]:
     return [sys.executable, "-c", code]
 
 
-def workspace(root: Path, tools: list[dict[str, object]], extra: str = "") -> Path:
+def workspace(root: Path, tools: Sequence[dict[str, object]], extra: str = "") -> Path:
     root.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
     (root / CONFIG_NAME).write_text(f"version: 1\n{extra}tools: {json.dumps(tools)}\n", encoding="utf-8")
@@ -81,7 +82,7 @@ def test_a_tool_that_is_not_installed_is_an_error_saying_how_to_install_it(tmp_p
 
 
 def test_a_failing_tool_does_not_stop_the_next_one(tmp_path: Path) -> None:
-    tools = [
+    tools: list[dict[str, object]] = [
         {"name": "first", "command": python("import sys; sys.exit(1)")},
         {"name": "second", "command": python("print('ran')")},
     ]
@@ -106,7 +107,7 @@ def test_the_severity_of_a_tool_failure_can_be_changed(tmp_path: Path) -> None:
 
 
 def test_check_shows_each_tool_under_its_name_and_exits_1_when_one_fails(tmp_path: Path) -> None:
-    tools = [
+    tools: list[dict[str, object]] = [
         {"name": "lint", "command": python("print('lint says no'); raise SystemExit(1)")},
         {"name": "spell", "command": python("print('spell says yes')")},
     ]
