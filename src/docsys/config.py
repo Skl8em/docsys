@@ -83,6 +83,11 @@ class Phases(TypedDict):
     mention: str
 
 
+class Tool(TypedDict):
+    name: str
+    command: list[str]
+
+
 class Config(TypedDict):
     version: str
     scope: Scope
@@ -91,6 +96,7 @@ class Config(TypedDict):
     paired_change: PairedChange | None
     phases: Phases | None
     rules: dict[str, Severity]  # rule id -> the severity that replaces its default
+    tools: list[Tool]  # external commands `docsys check` runs after its own checks
 
 
 # The formats of docsys.yaml this package reads — part of the cross-package API:
@@ -99,6 +105,7 @@ FORMAT_VERSIONS: Final = ("1",)
 
 DEFAULT_ROOT_DOCUMENT: Final = "README.md"
 SEVERITIES: Final[tuple[Severity, ...]] = ("error", "warning", "off")
+NAME_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 RULE_ID_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$")
 # The keys each section accepts are the fields of its type, in their order.
 TOP_LEVEL: Final = tuple(Config.__annotations__)
@@ -424,6 +431,32 @@ def _rules(value: object) -> dict[str, Severity]:
     return checked
 
 
+def _tools(value: object) -> list[Tool]:
+    fix = "write each as `- name: <word>` and `command: [<program>, <argument>, ...]`, under `tools:`"
+    if not _is_list(value):
+        raise ConfigError(f"`tools` must be a list — fix: {fix}.")
+    tools: list[Tool] = []
+    for index, item in enumerate(value):
+        where = f"tools[{index}]"
+        entry = _section(item, where, tuple(Tool.__annotations__))
+        name = _string(entry["name"], f"{where}.name", "give it a name, such as `markdownlint`")
+        if not NAME_RE.match(name):
+            raise ConfigError(
+                f"`{where}.name` is {name!r}, which is not hyphen-cased — fix: write it in lowercase words "
+                "joined by hyphens, such as `markdownlint`."
+            )
+        if any(tool["name"] == name for tool in tools):
+            raise ConfigError(f"`{where}.name`: `{name}` is named twice — fix: give each tool its own name.")
+        command = _string_list(entry["command"], f"{where}.command")
+        if not command or not all(command):
+            raise ConfigError(
+                f"`{where}.command` is empty or holds an empty word — fix: write the program, then each argument "
+                "as its own item, such as `[markdownlint-cli2, --fix]`."
+            )
+        tools.append(Tool(name=name, command=command))
+    return tools
+
+
 def validate(raw: object) -> Config:
     """Check a loaded configuration and return it normalised: integer keys
     converted, `root_document` and `scope.exclude` defaulted, and every optional
@@ -450,6 +483,7 @@ def validate(raw: object) -> Config:
         paired_change=_paired_change(cfg["paired_change"]) if "paired_change" in cfg else None,
         phases=_phases(cfg["phases"]) if "phases" in cfg else None,
         rules=_rules(cfg.get("rules", {})),
+        tools=_tools(cfg.get("tools", [])),
     )
 
 

@@ -59,6 +59,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"warnings ({len(report.warnings)}), reported without failing the run:")
         for finding in report.warnings:
             print(f"  {finding}")
+    for name, output in report.tool_outputs:
+        print(f"=== {name} ===")
+        print(output, end="" if output.endswith("\n") or not output else "\n")
     counts = f"{_count(len(report.errors), 'error')}, {_count(len(report.warnings), 'warning')}"
     if report.errors:
         print(f"docsys check failed: {counts}")

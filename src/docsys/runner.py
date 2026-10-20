@@ -4,7 +4,8 @@ finding given the severity its rule has in this workspace.
 The checks run in the order of `CHECKS` — the order of their rules in
 `docsys.rules.RULES` — and a failing check does not stop the ones after it: the
 run is the conjunction of every check, and a reader needs every failure from one
-run. A check whose section the configuration leaves out reports nothing.
+run. A check whose section the configuration leaves out reports nothing. The tools the
+configuration names run after the checks, all of them whatever one does.
 
     from docsys.runner import run
     report = run(workspace, cfg)
@@ -21,6 +22,7 @@ from .checks import frontmatter, hashes, ledger, links, paired_change, phase_sta
 from .config import Config
 from .findings import Finding
 from .rules import severities
+from .tools import Output, run_tools
 
 Check = Callable[[Path, Config], list[Finding]]
 
@@ -40,6 +42,7 @@ CHECKS: Final[tuple[Check, ...]] = (
 class Report:
     errors: list[Finding] = field(default_factory=list[Finding])
     warnings: list[Finding] = field(default_factory=list[Finding])
+    tool_outputs: list[Output] = field(default_factory=list[Output])
 
 
 def run(workspace: Path, config: Config) -> Report:
@@ -48,13 +51,14 @@ def run(workspace: Path, config: Config) -> Report:
     severity = severities(config)
     errors: list[Finding] = []
     warnings: list[Finding] = []
-    for check in CHECKS:
-        for finding in check(workspace, config):
-            match severity[finding.rule]:
-                case "error":
-                    errors.append(finding)
-                case "warning":
-                    warnings.append(finding)
-                case "off":
-                    pass
-    return Report(errors, warnings)
+    findings = [finding for check in CHECKS for finding in check(workspace, config)]
+    tool_findings, outputs = run_tools(workspace, config)
+    for finding in [*findings, *tool_findings]:
+        match severity[finding.rule]:
+            case "error":
+                errors.append(finding)
+            case "warning":
+                warnings.append(finding)
+            case "off":
+                pass
+    return Report(errors, warnings, outputs)
