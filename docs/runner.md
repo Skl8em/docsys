@@ -47,6 +47,21 @@ A check whose section `docsys.yaml` leaves out returns no finding: the register,
 The runner does not decide this.
 Each check does, from its own section, so a check called directly (as the conformance suite calls it) behaves as it does in a run.
 
+## The tools
+
+Some checks need a program `docsys` does not carry: a Markdown linter that needs Node, a spell checker.
+A project names it in `tools:` of `docsys.yaml` as a `name` and a `command`, an argument list rather than a shell string, so no quoting is read and nothing is expanded.
+[`tools.py`](../src/docsys/tools.py) runs each one after the checks, from the workspace, with no standard input, and keeps what it printed on standard output and standard error.
+The command prints that under `=== name ===`, after the findings, so a tool's lines are attributed to it even when the output is a pipe, which is how a machine reads it.
+
+A tool is not a check: it has no rules of its own, only an exit status.
+Two findings stand for it: `tools/failed` when it exits non-zero, `tools/missing` when its program cannot be run, with the way to install it.
+Being findings, they take the project's severity like any rule, so a project can run a tool it does not yet want to fail on.
+A failing tool does not stop the next, for the reason every check runs.
+
+`docsys` does not pin a tool: it runs the program the `PATH` finds.
+Pinning is the project's, through its lockfile or its development shell, and a tool that is the wrong version is a defect there, not here.
+
 ## Severity
 
 A rule's default severity is set where the check names the rule (`Rule("links/resolve", "error")`), and is the methodology's: a rule stated as a heuristic is a `warning`, one not yet wanted by default is `off`.

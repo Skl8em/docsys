@@ -10,6 +10,7 @@ A rule's default severity is the methodology's, set where the check names the ru
 
 from typing import Final
 
+from . import tools
 from .checks import frontmatter, hashes, ledger, links, paired_change, phase_state, slugs, ulids
 from .config import Config, ConfigError
 from .findings import Rule, Severity
@@ -23,6 +24,7 @@ RULES: Final[tuple[Rule, ...]] = (
     *paired_change.RULES,
     *ledger.RULES,
     *phase_state.RULES,
+    *tools.RULES,
 )
 
 
