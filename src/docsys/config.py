@@ -508,3 +508,14 @@ def in_scope(scope: Scope, path: str) -> bool:
         return any(_compile(p).fullmatch(path) for p in patterns)
 
     return matches(scope["include"]) or not matches(scope["exclude"])
+
+
+def exclusion(scope: Scope, path: str) -> tuple[str, str] | None:
+    """The first exclusion that takes `path` out of the scope, as its pattern and
+    its reason; None when the document is in scope."""
+    if in_scope(scope, path):
+        return None
+    for pattern, reason in scope["exclude"].items():
+        if _compile(pattern).fullmatch(path):
+            return pattern, reason
+    return None
