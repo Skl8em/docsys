@@ -8,6 +8,9 @@
 # the project keeps a decision register (`register:` in docsys.yaml), each row must
 # agree with the record it links to.
 #
+# A reference may name a record the scope excludes: an exclusion takes a document out of the
+# checks, not out of the project, so the reference resolves. The excluded record is not
+# checked, so it is not asked to name the reference back.
 # A reference that is a `<...>` placeholder is a template's fill-in, not a reference.
 # A document whose frontmatter cannot be read is not checked; the frontmatter check
 # reports it, once. A finding is on the line of the key it is about; the findings of
@@ -132,6 +135,40 @@ cases:
     files:
       a.md: "---\nsupersedes: <ADR-XXX or null>\nsuperseded-by: null\n---\n"
     findings: []
+
+  - name: a reference to an excluded record resolves, and the excluded record owes nothing back
+    config: |
+      version: 1
+      scope:
+        exclude:
+          old/: predates docsys; awaiting review
+    files:
+      a.md: "---\nsupersedes: b\n---\n"
+      old/b.md: "no frontmatter\n"
+    findings: []
+
+  - name: a reference to an excluded record by its id resolves
+    config: |
+      version: 1
+      scope:
+        exclude:
+          old/: predates docsys; awaiting review
+    files:
+      a.md: "---\nsuperseded-by: 01K0000000000000000000000B\n---\n"
+      old/b.md: "---\nid: 01K0000000000000000000000B\n---\n"
+    findings: []
+
+  - name: a reference to nothing still dangles when other records are excluded
+    config: |
+      version: 1
+      scope:
+        exclude:
+          old/: predates docsys; awaiting review
+    files:
+      a.md: "---\nsupersedes: no-such-record\n---\n"
+      old/b.md: "no frontmatter\n"
+    findings:
+      - { rule: ulids/resolve, path: a.md, line: 2 }
 
   - name: a list of references, one of them dangling
     files:
