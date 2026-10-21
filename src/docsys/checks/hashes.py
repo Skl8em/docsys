@@ -79,7 +79,7 @@ def is_frozen(frontmatter: Frontmatter) -> bool:
     )
 
 
-def _declared(frontmatter: list[str]) -> tuple[str, int] | None:
+def declared_seal(frontmatter: list[str]) -> tuple[str, int] | None:
     """The `hash:` line's value, and its file line (the block starts on line 2)."""
     for index, line in enumerate(frontmatter):
         if line.startswith("hash:"):
@@ -98,7 +98,7 @@ def check(workspace: Path, config: Config) -> list[Finding]:
         if parts is None:
             continue
         frontmatter, body = parts
-        declared = _declared(frontmatter)
+        declared = declared_seal(frontmatter)
         if declared is not None:
             actual = seal_of(frontmatter, body)
             if declared[0] != actual:
