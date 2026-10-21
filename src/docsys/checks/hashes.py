@@ -29,9 +29,11 @@ SEAL: Final = Rule("hashes/seal", "error")
 UNSEALED: Final = Rule("hashes/unsealed", "off")
 RULES: Final = (SEAL, UNSEALED)
 
-# Which `status` words close a record.
+# Which `status` words close a record, and which do not. The vocabulary declares the
+# words but leaves which are frozen among its open questions, so the answer is here,
+# and tests/test_hashes.py fails when a declared word is in neither list.
 FROZEN_STATUSES: Final = ("accepted", "done", "stable")
-OPEN_STATUSES: Final[tuple[str, ...]] = ()
+OPEN_STATUSES: Final = ("draft", "deprecated", "in-progress", "planned")
 
 
 def _is_mapping(value: object) -> TypeGuard[dict[object, object]]:
