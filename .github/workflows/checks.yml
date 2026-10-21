@@ -1,0 +1,16 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Installs Nix with flakes enabled.
+      - uses: DeterminateSystems/nix-installer-action@v23
+      # The same pinned toolchain (flake.lock) and the same locked environment as local.
+      - run: nix develop --command uv sync --locked
+      - run: nix develop --command uv run --locked pytest
