@@ -39,6 +39,16 @@ class Scope(TypedDict):
     exclude: dict[str, str]  # pattern -> why the documents it matches are excluded
 
 
+class Allowance(TypedDict):
+    document: str  # the document holding the link
+    target: str  # the link's target as written, anchor included, title dropped
+    reason: str  # why the link may stay dead
+
+
+class Links(TypedDict):
+    allow: list[Allowance]
+
+
 class Register(TypedDict):
     path: str
     columns: int
@@ -92,6 +102,7 @@ class Config(TypedDict):
     version: str
     scope: Scope
     root_document: str
+    links: Links
     register: Register | None
     paired_change: PairedChange | None
     phases: Phases | None
@@ -261,6 +272,33 @@ def _scope(cfg: dict[str, object]) -> Scope:
             raise ConfigError(f"`scope.exclude` gives `{pattern}` no reason — fix: {fix}.")
         exclude[_pattern(pattern, "scope.exclude")] = reason
     return Scope(include=include, exclude=exclude)
+
+
+def _links(value: object) -> Links:
+    raw = _mapping(value, "links", "write it as `links: {allow: [{document: …, target: …, reason: …}]}`")
+    keys = tuple(Links.__annotations__)
+    extra = sorted(set(raw) - set(keys))
+    if extra:
+        raise ConfigError(f"`links` has unknown key(s) {extra} — fix: remove them; allowed: {list(keys)}.")
+    allow_fix = "write each allowance as `- document: …`, `target: …` and `reason: …`, under `allow:`"
+    items = raw.get("allow", [])
+    if not _is_list(items):
+        raise ConfigError(f"`links.allow` must be a list — fix: {allow_fix}.")
+    allow: list[Allowance] = []
+    for index, item in enumerate(items):
+        where = f"links.allow[{index}]"
+        entry = _section(item, where, tuple(Allowance.__annotations__))
+        document = _relative_path(entry["document"], f"{where}.document", "docs/a.md")
+        target = _string(entry["target"], f"{where}.target", "write the link's target as it is written in the document")
+        reason = _string(entry["reason"], f"{where}.reason", "say why the link may stay dead")
+        if not reason.strip():
+            raise ConfigError(f"`{where}.reason` must be non-empty — fix: say why the link may stay dead.")
+        if any(a["document"] == document and a["target"] == target for a in allow):
+            raise ConfigError(
+                f"`{where}` allows `{target}` in `{document}` twice — fix: keep one allowance for each link."
+            )
+        allow.append(Allowance(document=document, target=target, reason=reason))
+    return Links(allow=allow)
 
 
 def _register(value: object) -> Register:
@@ -479,6 +517,7 @@ def validate(raw: object) -> Config:
         root_document=_relative_path(
             cfg.get("root_document", DEFAULT_ROOT_DOCUMENT), "root_document", DEFAULT_ROOT_DOCUMENT
         ),
+        links=_links(cfg.get("links", {})),
         register=_register(cfg["register"]) if "register" in cfg else None,
         paired_change=_paired_change(cfg["paired_change"]) if "paired_change" in cfg else None,
         phases=_phases(cfg["phases"]) if "phases" in cfg else None,
