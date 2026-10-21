@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs the engine's tests before a commit.
+# Opt in once with:  git config core.hooksPath .githooks
+if [ -z "${DOCSYS_DEVSHELL:-}" ]; then
+  exec nix develop --command uv run --locked pytest
+fi
+exec uv run --locked pytest
