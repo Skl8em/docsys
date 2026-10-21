@@ -306,7 +306,7 @@ cases:
       writing/a.md: "changed\n"
     findings: []
 
-  - name: a new file nothing tracks yet is the worktree check's to report
+  - name: a new file nothing tracks yet is in no unit until it is staged
     config: *config
     history:
       - {label: anchor, message: the rule lands, files: {writing/a.md: "a\n", scripts/x.py: "x = 1\n"}}
