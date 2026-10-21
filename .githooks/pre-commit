@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs the engine's tests before a commit.
+# Opt in once with:  git config core.hooksPath .githooks
+#
+# Git exports GIT_DIR and GIT_INDEX_FILE to a hook; the tests create throwaway
+# repositories, and `git init` under an inherited GIT_DIR rewrites this repository's own
+# configuration (core.bare = true). Drop them, so the tests see a clean environment.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+if [ -z "${DOCSYS_DEVSHELL:-}" ]; then
+  exec nix develop --command uv run --locked pytest
+fi
+exec uv run --locked pytest
