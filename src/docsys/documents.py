@@ -81,3 +81,17 @@ def excluded(workspace: Path, scope: Scope) -> list[Excluded]:
         if taken is not None:
             left_out.append(Excluded(path, *taken))
     return left_out
+
+
+@dataclass(frozen=True)
+class Exclusion:
+    """Stub."""
+
+    pattern: str
+    reason: str
+    count: int
+
+
+def exclusions(workspace: Path, scope: Scope) -> list[Exclusion]:
+    """Stub."""
+    raise NotImplementedError

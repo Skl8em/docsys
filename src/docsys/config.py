@@ -553,3 +553,8 @@ def exclusion(scope: Scope, path: str) -> tuple[str, str] | None:
         if _compile(pattern).fullmatch(path):
             return pattern, reason
     return None
+
+
+def covers_folder(scope: Scope, folder: str) -> bool:
+    """Stub: does the scope leave out everything below `folder`?"""
+    raise NotImplementedError
