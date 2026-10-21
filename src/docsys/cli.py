@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import __version__, exitcodes
 from .config import Config, ConfigError, load_config
-from .documents import DocumentsError, documents, excluded
+from .documents import DocumentsError, documents, excluded, exclusions
 from .runner import run
 from .workspace import WorkspaceError, resolve_workspace
 
@@ -18,6 +18,7 @@ class Arguments(argparse.Namespace):
 
     command: str = ""
     workspace: str | None = None
+    documents: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,10 +30,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace",
         help="the project root holding docsys.yaml (default: the nearest one above the current directory)",
     )
-    report = commands.add_parser("report", help="list the documents the scope leaves out, with their reasons")
+    report = commands.add_parser("report", help="list the scope's exclusions, with their reasons and counts")
     report.add_argument(
         "--workspace",
         help="the project root holding docsys.yaml (default: the nearest one above the current directory)",
+    )
+    report.add_argument(
+        "--documents",
+        action="store_true",
+        help="also list each excluded document, with the exclusion that took it out",
     )
     return parser
 
@@ -48,7 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config(workspace)
         if args.command == "report":
-            return _report(workspace, config)
+            return _report(workspace, config, args.documents)
         report = run(workspace, config)
     except (ConfigError, DocumentsError) as exc:
         print(f"docsys: {exc}", file=sys.stderr)
@@ -70,10 +76,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     return exitcodes.OK
 
 
-def _report(workspace: Path, config: Config) -> int:
+def _report(workspace: Path, config: Config, listing: bool) -> int:
+    for item in exclusions(workspace, config["scope"]):
+        print(f"{item.pattern}: {item.reason} ({_count(item.count, 'document')})")
     left_out = excluded(workspace, config["scope"])
-    for item in left_out:
-        print(f"{item.path}: {item.reason} (excluded by `{item.pattern}`)")
+    if listing:
+        for document in left_out:
+            print(f"{document.path}: {document.reason} (excluded by `{document.pattern}`)")
     in_scope = len(documents(workspace, config["scope"]))
     count = f"{len(left_out)} {'document' if len(left_out) == 1 else 'documents'} excluded"
     print(f"{count if left_out else 'no document is excluded'}, {in_scope} in scope")
