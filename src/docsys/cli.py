@@ -10,6 +10,7 @@ from . import __version__, exitcodes
 from .config import Config, ConfigError, load_config
 from .documents import DocumentsError, documents, excluded, exclusions
 from .runner import run
+from .ulid import at_to_ms, new_ulid
 from .workspace import WorkspaceError, resolve_workspace
 
 
@@ -19,6 +20,9 @@ class Arguments(argparse.Namespace):
     command: str = ""
     workspace: str | None = None
     documents: bool = False
+    at: str | None = None
+    order: int | None = None
+    slug: str | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,11 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also list each excluded document, with the exclusion that took it out",
     )
+    mint = commands.add_parser("id", help="print a new ULID; it needs no workspace")
+    when = mint.add_mutually_exclusive_group()
+    when.add_argument("--at", help="chronological: an ISO date or date-time (UTC) for the timestamp")
+    when.add_argument("--order", type=int, help="ordinal: a controlled sort key, for re-orderable records")
+    mint.add_argument("--slug", help="print <ulid>-<slug>, a filename stem")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv, namespace=Arguments())
+    if args.command == "id":
+        return _id(args)
     try:
         workspace = resolve_workspace(start=os.getcwd(), explicit=args.workspace)
     except WorkspaceError as exc:
@@ -73,6 +84,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"docsys check failed: {counts}")
         return exitcodes.FINDINGS
     print(f"docsys check passed: {counts}")
+    return exitcodes.OK
+
+
+def _id(args: Arguments) -> int:
+    try:
+        ulid = new_ulid(ts_ms=None if args.at is None else at_to_ms(args.at), order=args.order)
+    except ValueError as exc:
+        print(f"docsys: {exc}", file=sys.stderr)
+        return exitcodes.ERROR
+    print(f"{ulid}-{args.slug}" if args.slug else ulid)
     return exitcodes.OK
 
 

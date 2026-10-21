@@ -4,7 +4,7 @@ bits; sortable by the leading timestamp."""
 
 import pytest
 
-from docsys.ulid import is_ulid, new_ulid, timestamp_of
+from docsys.ulid import at_to_ms, is_ulid, new_ulid, timestamp_of
 
 
 def test_a_new_ulid_is_valid() -> None:
@@ -54,3 +54,13 @@ def test_valid(candidate: str) -> None:
 )
 def test_invalid(candidate: str | None) -> None:
     assert not is_ulid(candidate)
+
+
+def test_a_date_reads_as_utc_milliseconds() -> None:
+    assert at_to_ms("2026-08-01") == 1_785_542_400_000
+    assert at_to_ms("2026-08-01T00:00:01") == 1_785_542_401_000
+
+
+def test_an_unparseable_date_is_refused() -> None:
+    with pytest.raises(ValueError, match="yesterday"):
+        at_to_ms("yesterday")
