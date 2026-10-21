@@ -145,7 +145,19 @@ cases:
       legacy/old.md: ""
     findings: []
 
-  - name: a file git ignores is not a document
+  - name: a file git ignores is a document all the same
+    files:
+      .gitignore: "build/\n"
+      build/notes.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: build/notes.md, line: 1 }
+
+  - name: a file the scope excludes is left out, whatever git ignores
+    config: |
+      version: 1
+      scope:
+        exclude:
+          build/: generated
     files:
       .gitignore: "build/\n"
       build/notes.md: "[x](gone.md)\n"
