@@ -53,7 +53,9 @@ CASES: list[tuple[str, str, list[int]]] = [
     ("trailing colon introduces a list", "The gate runs these:\n\n- linkcheck\n", []),
 ]
 
-VIOLATION = re.compile(r"^[^:]+:(\d+):\d+ sentence-per-line/MD100")
+# markdownlint-cli2 0.21.0 prints a severity word (`error`, `warning`) after the column;
+# 0.17.2, the version the project pins, prints none. Both were run; the releases between were not.
+VIOLATION = re.compile(r"^[^:]+:(\d+):\d+ (?:(?:error|warning) )?sentence-per-line/MD100")
 
 
 @pytest.fixture(scope="module")
