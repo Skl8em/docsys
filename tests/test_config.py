@@ -30,6 +30,16 @@ REGISTER: dict[str, str] = {
     "ordinal_pattern": r"^\[(\d+)\]\(([^)]+)\)$",
     "superseded_pattern": r"superseded by (\d+)",
 }
+LINKS: Raw = {
+    "allow": [
+        {
+            "document": "records/old.md",
+            "target": "../tools/gone.py",
+            "reason": "retired with tools/; the record is frozen",
+        },
+        {"document": "records/old.md", "target": "gone.md#part", "reason": "moved to another repository"},
+    ]
+}
 PAIRED_CHANGE: Raw = {
     "since": "0123456789abcdef0123456789abcdef01234567",
     "mechanism": ["engine/"],
@@ -54,6 +64,7 @@ FULL: Raw = {
         "include": ["raw/README.md"],
     },
     "root_document": "docs/README.md",
+    "links": LINKS,
     "register": REGISTER,
     "paired_change": PAIRED_CHANGE,
     "phases": PHASES,
@@ -143,6 +154,14 @@ def test_a_full_configuration_is_kept_with_integer_keys_converted() -> None:
     assert cfg["paired_change"] == PAIRED_CHANGE
     assert cfg["phases"] is not None
     assert cfg["phases"]["ledger"] == "state/phases.yaml"
+
+
+def test_without_links_nothing_is_allowed() -> None:
+    assert validate(copy.deepcopy(MINIMAL))["links"] == {"allow": []}
+
+
+def test_allowances_keep_their_order_and_reasons() -> None:
+    assert validate(copy.deepcopy(FULL))["links"]["allow"] == LINKS["allow"]
 
 
 def test_without_rules_every_rule_keeps_its_default_severity() -> None:
@@ -355,6 +374,56 @@ REFUSALS = [
         setter("rules", "links/resolve", ["error"]),
         ["rules", "links/resolve", "error", "warning", "off"],
         id="a severity that is not a word",
+    ),
+    pytest.param(setter("links", None, ["a.md"]), ["links", "mapping"], id="links that are not a section"),
+    pytest.param(setter("links", "extra", []), ["links", "extra", "unknown"], id="an unknown links key"),
+    pytest.param(setter("links", "allow", {"a.md": "x"}), ["links.allow", "list"], id="an allow that is not a list"),
+    pytest.param(
+        setter("links", "allow", ["a.md"]),
+        ["links.allow[0]", "document", "target", "reason"],
+        id="an allowance that is a word",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"document": "a.md", "target": "x.md"}]),
+        ["links.allow[0].reason", "missing"],
+        id="an allowance with no reason",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"document": "a.md", "target": "x.md", "reason": " "}]),
+        ["links.allow[0].reason", "non-empty"],
+        id="an allowance with a blank reason",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"target": "x.md", "reason": "why"}]),
+        ["links.allow[0].document", "missing"],
+        id="an allowance with no document",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"document": "a.md", "reason": "why"}]),
+        ["links.allow[0].target", "missing"],
+        id="an allowance with no target",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"document": "/a.md", "target": "x.md", "reason": "why"}]),
+        ["links.allow[0].document", "/a.md", "relative"],
+        id="an absolute document",
+    ),
+    pytest.param(
+        setter("links", "allow", [{"document": "a.md", "target": "", "reason": "why"}]),
+        ["links.allow[0].target", "non-empty"],
+        id="an empty target",
+    ),
+    pytest.param(
+        setter(
+            "links",
+            "allow",
+            [
+                {"document": "a.md", "target": "x.md", "reason": "why"},
+                {"document": "a.md", "target": "x.md", "reason": "again"},
+            ],
+        ),
+        ["links.allow[1]", "a.md", "x.md", "twice"],
+        id="the same link allowed twice",
     ),
     pytest.param(setter("tools", None, {"name": "x"}), ["tools", "list"], id="tools that are not a list"),
     pytest.param(setter("tools", None, ["markdownlint"]), ["tools[0]", "name", "command"], id="a tool that is a word"),
