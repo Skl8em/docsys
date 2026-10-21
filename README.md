@@ -18,9 +18,10 @@ Its checks were extracted, one at a time and test first, from the `scripts/` fol
 `docsys check` runs those a project's `docsys.yaml` turns on, and each rule has a severity the project can change.
 A project can also name external tools, such as a Markdown linter, that `docsys check` runs after its checks.
 The package also ships a markdownlint rule, `sentence-per-line` (MD100), in `src/docsys/markdownlint/`: a project that keeps one sentence per line names it under `customRules` in its markdownlint configuration, and runs markdownlint as a tool.
-`docsys report` lists the documents the scope leaves out, each with the reason of its exclusion, and counts them.
+`docsys report` lists each exclusion of the scope with its reason and the number of documents it leaves out, and counts the documents in scope; `--documents` adds the excluded documents one by one.
 
-A document is a Markdown file of the workspace that git tracks, or would track once added, and that the scope in `docsys.yaml` governs.
+A document is a Markdown file anywhere under the workspace but inside `.git`, and that the scope in `docsys.yaml` governs: git's index and `.gitignore` are not consulted, so a project leaves a build folder or a virtual environment out with `scope.exclude`, and says why.
+A workspace need not be a git repository; only the paired-change check, when configured, needs one.
 Each check's rules are stated in [`conformance/`](conformance/), as the documents of a small workspace and the findings expected on them, so that any `docsys` package, in any language, can be held to them.
 How the engine works inside, and why it is built so, is explained for its maintainer in [`docs/`](docs/), which holds the fiches on the [runner](docs/runner.md), on the ULID check, [referential integrity](docs/referential-integrity.md), on the [paired-change rule](docs/paired-change.md), on the [phase ledger and the phase-state check](docs/phase-state.md), and on the [vocabulary and its reader](docs/vocabulary.md); the fiches on the other checks are still to write.
 A finding reads `path:line: rule: message — fix: the edit that clears it`.
