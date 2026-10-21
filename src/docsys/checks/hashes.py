@@ -31,6 +31,7 @@ RULES: Final = (SEAL, UNSEALED)
 
 # Which `status` words close a record.
 FROZEN_STATUSES: Final = ("accepted", "done", "stable")
+OPEN_STATUSES: Final[tuple[str, ...]] = ()
 
 
 def _is_mapping(value: object) -> TypeGuard[dict[object, object]]:
