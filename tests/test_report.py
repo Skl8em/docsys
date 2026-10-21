@@ -13,7 +13,7 @@ import pytest
 
 from docsys import exitcodes
 from docsys.config import Scope
-from docsys.documents import Exclusion, Excluded, excluded, exclusions
+from docsys.documents import Excluded, Exclusion, excluded, exclusions
 from docsys.workspace import CONFIG_NAME
 
 
@@ -81,13 +81,18 @@ def test_each_exclusion_is_listed_with_its_reason_and_its_count(repo: Path) -> N
 def test_a_document_counts_for_the_first_exclusion_only(repo: Path) -> None:
     write(repo, "legacy/transcripts/a.md")
     scope = Scope(include=[], exclude={"legacy/": "predates docsys", "**/transcripts/": "raw output"})
-    assert exclusions(repo, scope) == [Exclusion("legacy/", "predates docsys", 1), Exclusion("**/transcripts/", "raw output", 0)]
+    assert exclusions(repo, scope) == [
+        Exclusion("legacy/", "predates docsys", 1),
+        Exclusion("**/transcripts/", "raw output", 0),
+    ]
 
 
 def test_excluded_documents_inside_an_ignored_folder_are_counted(repo: Path) -> None:
     write(repo, ".gitignore", ".venv/\n")
     write(repo, ".venv/lib/x.md")
-    assert exclusions(repo, Scope(include=[], exclude={".venv/": "environment"})) == [Exclusion(".venv/", "environment", 1)]
+    assert exclusions(repo, Scope(include=[], exclude={".venv/": "environment"})) == [
+        Exclusion(".venv/", "environment", 1)
+    ]
 
 
 # --- the command ----------------------------------------------------------------------

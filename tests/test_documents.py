@@ -6,6 +6,7 @@ outside git is a workspace like another."""
 
 import os
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -110,7 +111,7 @@ def test_a_folder_the_scope_leaves_out_wholly_is_not_entered(repo: Path, monkeyp
     entered: list[str] = []
     scandir = os.scandir
 
-    def spy(path: str | os.PathLike[str] = ".") -> "os._ScandirIterator[str]":
+    def spy(path: str | os.PathLike[str] = ".") -> Iterator[os.DirEntry[str]]:
         entered.append(os.fspath(path))
         return scandir(path)
 
