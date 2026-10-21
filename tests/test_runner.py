@@ -155,14 +155,14 @@ def test_check_with_a_rule_that_does_not_exist_is_a_configuration_error(tmp_path
     assert "fix:" in result.stderr
 
 
-def test_check_outside_git_is_an_error_naming_the_fix(tmp_path: Path) -> None:
+def test_check_outside_git_runs_like_anywhere(tmp_path: Path) -> None:
     root = tmp_path / "p"
     root.mkdir()
     (root / CONFIG_NAME).write_text("version: 1\n", encoding="utf-8")
+    (root / "README.md").write_text(BROKEN, encoding="utf-8")
     result = run_cli("check", cwd=root)
-    assert result.returncode == exitcodes.ERROR
-    assert "git" in result.stderr
-    assert "fix:" in result.stderr
+    assert result.returncode == exitcodes.FINDINGS
+    assert "links/resolve" in result.stdout
 
 
 @pytest.mark.parametrize("scope", ["", "scope: {exclude: {README.md: not yet revised}}\n"])

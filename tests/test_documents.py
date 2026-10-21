@@ -1,15 +1,18 @@
-"""The documents of a workspace: its Markdown files that git tracks or would track —
-committed or not, never ignored, never inside a submodule — that the scope
-governs. Git is what tells a project's own files from its build output and its
-virtual environments, so a workspace outside git is refused rather than walked."""
+"""The documents of a workspace: its Markdown files, anywhere under it but inside
+`.git`, that the scope governs. The walk consults neither git's index nor
+`.gitignore`, follows no symlink, and does not enter a folder the scope leaves out
+wholly, so a build folder or a virtual environment costs nothing. A workspace
+outside git is a workspace like another."""
 
+import os
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from docsys.config import Scope
-from docsys.documents import DocumentsError, documents, files
+from docsys.documents import documents, files
 
 EVERYTHING = Scope(include=[], exclude={})
 
@@ -39,21 +42,6 @@ def test_committed_and_uncommitted_documents_are_listed_in_path_order(repo: Path
     assert documents(repo, EVERYTHING) == ["a/z.md", "b.md"]
 
 
-def test_a_tracked_document_deleted_from_the_worktree_is_not_listed(repo: Path) -> None:
-    write(repo, "gone.md")
-    git(repo, "add", "gone.md")
-    (repo / "gone.md").unlink()
-    assert documents(repo, EVERYTHING) == []
-
-
-def test_ignored_files_and_other_extensions_are_not_documents(repo: Path) -> None:
-    write(repo, ".gitignore", ".venv/\n")
-    write(repo, ".venv/lib/site-packages/pkg/README.md")
-    write(repo, "notes.txt")
-    write(repo, "README.md")
-    assert documents(repo, EVERYTHING) == ["README.md"]
-
-
 def test_the_scope_filters_the_documents(repo: Path) -> None:
     write(repo, "legacy/old.md")
     write(repo, "legacy/revised.md")
@@ -68,29 +56,89 @@ def test_a_workspace_below_the_repository_root_lists_its_own_documents(repo: Pat
     assert documents(repo / "project", EVERYTHING) == ["docs/a.md"]
 
 
-def test_a_workspace_outside_git_is_refused_with_a_fix(tmp_path: Path) -> None:
+def test_a_deleted_document_is_not_listed(repo: Path) -> None:
+    write(repo, "gone.md")
+    git(repo, "add", "gone.md")
+    (repo / "gone.md").unlink()
+    assert documents(repo, EVERYTHING) == []
+
+
+def test_an_ignored_markdown_file_is_a_document(repo: Path) -> None:
+    write(repo, ".gitignore", ".venv/\n")
+    write(repo, ".venv/lib/pkg/README.md")
+    write(repo, "notes.txt")
+    assert documents(repo, EVERYTHING) == [".venv/lib/pkg/README.md"]
+
+
+def test_an_untracked_document_is_a_document(repo: Path) -> None:
+    write(repo, "new.md")
+    assert documents(repo, EVERYTHING) == ["new.md"]
+
+
+def test_a_file_inside_git_is_not_a_document(repo: Path) -> None:
+    write(repo, ".git/notes.md")
+    write(repo, "a.md")
+    assert documents(repo, EVERYTHING) == ["a.md"]
+
+
+def test_a_submodules_files_are_documents(repo: Path) -> None:
+    write(repo, "sub/.git", "gitdir: ../.git/modules/sub\n")
+    write(repo, "sub/README.md")
+    assert documents(repo, EVERYTHING) == ["sub/README.md"]
+
+
+def test_a_symlinked_folder_is_not_followed(repo: Path) -> None:
+    write(repo, "real/a.md")
+    (repo / "alias").symlink_to(repo / "real", target_is_directory=True)
+    assert documents(repo, EVERYTHING) == ["real/a.md"]
+
+
+def test_a_symlinked_file_is_not_a_document(repo: Path) -> None:
+    write(repo, "a.md")
+    (repo / "b.md").symlink_to(repo / "a.md")
+    assert documents(repo, EVERYTHING) == ["a.md"]
+
+
+def test_a_workspace_outside_git_lists_its_documents(tmp_path: Path) -> None:
     write(tmp_path, "README.md")
-    with pytest.raises(DocumentsError) as caught:
-        documents(tmp_path, EVERYTHING)
-    message = str(caught.value)
-    assert str(tmp_path) in message
-    assert "fix:" in message
+    write(tmp_path, "docs/a.md")
+    assert documents(tmp_path, EVERYTHING) == ["README.md", "docs/a.md"]
 
 
-def test_files_lists_every_kind_of_file_and_none_that_git_ignores(repo: Path) -> None:
+def test_a_folder_the_scope_leaves_out_wholly_is_not_entered(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write(repo, ".venv/lib/x.md")
+    write(repo, "docs/a.md")
+    entered: list[str] = []
+    scandir = os.scandir
+
+    def spy(path: str | os.PathLike[str] = ".") -> Iterator[os.DirEntry[str]]:
+        entered.append(os.fspath(path))
+        return scandir(path)
+
+    monkeypatch.setattr(os, "scandir", spy)
+    scope = Scope(include=[], exclude={".venv/": "environment"})
+    assert documents(repo, scope) == ["docs/a.md"]
+    assert not any(".venv" in path for path in entered)
+
+
+def test_a_folder_an_inclusion_reaches_into_is_entered(repo: Path) -> None:
+    write(repo, "legacy/old.md")
+    write(repo, "legacy/deep/revised.md")
+    scope = Scope(include=["legacy/**/revised.md"], exclude={"legacy/": "predates docsys"})
+    assert documents(repo, scope) == ["legacy/deep/revised.md"]
+
+
+def test_files_lists_every_kind_of_file_under_a_folder(repo: Path) -> None:
     write(repo, ".gitignore", ".venv/\n")
     write(repo, "phases/a/README.md")
     write(repo, "phases/a/data.yaml")
-    write(repo, ".venv/lib/x.md")
-    assert files(repo) == [".gitignore", "phases/a/README.md", "phases/a/data.yaml"]
+    write(repo, ".venv/x.md")
+    write(repo, ".git/HEAD.md")
+    assert files(repo, under="phases") == ["phases/a/README.md", "phases/a/data.yaml"]
+    assert ".git/HEAD.md" not in files(repo)
 
 
-def test_files_can_be_narrowed_by_a_pathspec(repo: Path) -> None:
+def test_files_can_be_narrowed_by_a_suffix(repo: Path) -> None:
     write(repo, "a.md")
     write(repo, "b.yaml")
-    assert files(repo, "*.yaml") == ["b.yaml"]
-
-
-def test_files_outside_a_git_repository_are_refused(tmp_path: Path) -> None:
-    with pytest.raises(DocumentsError, match="git init"):
-        files(tmp_path)
+    assert files(repo, suffix=".yaml") == ["b.yaml"]

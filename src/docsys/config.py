@@ -553,3 +553,18 @@ def exclusion(scope: Scope, path: str) -> tuple[str, str] | None:
         if _compile(pattern).fullmatch(path):
             return pattern, reason
     return None
+
+
+def covers_folder(scope: Scope, folder: str) -> bool:
+    """Does the scope leave out everything below `folder`, a workspace-relative POSIX
+    path, so that no walk need enter it? An exclusion covers it only when it matches
+    files and subfolders of any name, and no inclusion could reach into it: an
+    inclusion is taken to reach in unless the literal text before its first wildcard
+    rules the folder out. When in doubt the answer is no, and the walk goes on."""
+    below = folder + "/"
+    for pattern in scope["include"]:
+        literal = re.split(r"[*?]", pattern, maxsplit=1)[0]
+        if below.startswith(literal) or literal.startswith(below):
+            return False
+    probes = (below + "\x01/\x01.md", below + "\x01.txt")
+    return any(all(_compile(pattern).fullmatch(probe) for probe in probes) for pattern in scope["exclude"])

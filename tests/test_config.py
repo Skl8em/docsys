@@ -12,7 +12,7 @@ from typing import TypeGuard
 
 import pytest
 
-from docsys.config import ConfigError, Scope, in_scope, load_config, validate
+from docsys.config import ConfigError, Scope, covers_folder, in_scope, load_config, validate
 from docsys.workspace import CONFIG_NAME
 
 # A configuration as read from YAML, before validation: built malformed on purpose,
@@ -497,3 +497,21 @@ def test_load_refuses_unreadable_yaml(tmp_path: Path, text: str, fragment: str) 
         load_config(tmp_path)
     assert fragment in str(caught.value)
     assert "fix:" in str(caught.value)
+
+
+def test_a_folder_pattern_leaves_its_folder_out_wholly() -> None:
+    assert covers_folder(Scope(include=[], exclude={".venv/": "environment"}), ".venv")
+    assert covers_folder(Scope(include=[], exclude={"**/transcripts/": "raw"}), "a/transcripts")
+
+
+def test_a_pattern_short_of_the_whole_folder_does_not() -> None:
+    assert not covers_folder(Scope(include=[], exclude={"docs/*": "top level only"}), "docs")
+    assert not covers_folder(Scope(include=[], exclude={"docs/**/*.md": "markdown only"}), "docs")
+    assert not covers_folder(Scope(include=[], exclude={}), "docs")
+
+
+def test_an_inclusion_that_may_reach_into_the_folder_defeats_it() -> None:
+    exclude = {"legacy/": "predates docsys"}
+    assert not covers_folder(Scope(include=["legacy/revised.md"], exclude=exclude), "legacy")
+    assert not covers_folder(Scope(include=["**/revised.md"], exclude=exclude), "legacy")
+    assert covers_folder(Scope(include=["docs/a.md"], exclude=exclude), "legacy")
