@@ -173,7 +173,7 @@ def _commit_units(since: str, workspace: Path) -> list[Unit]:
 def _pending_unit(workspace: Path) -> Unit | None:
     """The uncommitted change against HEAD (tracked files, staged or not), or None.
     Renames are split into delete and add, so moving a script out of the tooling still
-    counts. Untracked files are the worktree's business."""
+    counts. An untracked file is in no unit until it is staged."""
     result = _git(workspace, "diff", "--name-only", "--no-renames", "--relative", "HEAD", check=False)
     paths = [line for line in result.stdout.splitlines() if line] if result.returncode == 0 else []
     return Unit(PENDING, paths, _trivial(workspace, paths, "HEAD", None)) if paths else None
