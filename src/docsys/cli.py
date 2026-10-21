@@ -10,6 +10,7 @@ from . import __version__, exitcodes
 from .checks.hashes import is_frozen
 from .config import Config, ConfigError, load_config
 from .documents import DocumentsError, documents, excluded, exclusions
+from .rename import RenameError, rename
 from .runner import run
 from .seal import SealOutcome, seal_text, sealed_text
 from .ulid import at_to_ms, new_ulid
@@ -30,6 +31,9 @@ class Arguments(argparse.Namespace):
     frozen: bool = False
     reseal: bool = False
     print_only: bool = False
+    old: str = ""
+    new: str = ""
+    dry_run: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     seal.add_argument("--reseal", action="store_true", help="replace a seal whose record changed (a deliberate act)")
     seal.add_argument("--print", dest="print_only", action="store_true", help="print each seal, write nothing")
     seal.add_argument("--workspace", help="the project root holding docsys.yaml, read by --frozen")
+    move = commands.add_parser("rename", help="move a file or folder and rewrite every relative link to it")
+    move.add_argument("old", metavar="OLD", help="the file or folder to move")
+    move.add_argument("new", metavar="NEW", help="where it goes; it must not exist")
+    move.add_argument("--dry-run", action="store_true", help="report what would be moved and rewritten, change nothing")
+    move.add_argument("--workspace", help="the project root holding docsys.yaml (default: the nearest above here)")
     return parser
 
 
@@ -83,10 +92,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(workspace)
         if args.command == "seal":
             return _seal(args, [workspace / path for path in documents(workspace, config["scope"])])
+        if args.command == "rename":
+            return _rename(workspace, config, args)
         if args.command == "report":
             return _report(workspace, config, args.documents)
         report = run(workspace, config)
-    except (ConfigError, DocumentsError) as exc:
+    except (ConfigError, DocumentsError, RenameError) as exc:
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
     for finding in report.errors:
@@ -152,6 +163,25 @@ def _seal(args: Arguments, paths: list[Path]) -> int:
     if not args.print_only:
         print(f"\n{_count(considered, 'record')} considered.")
     return exitcodes.FINDINGS if refused else exitcodes.OK
+
+
+def _within(workspace: Path, given: str) -> str:
+    """`given`, read from the current directory, as a path from the workspace root."""
+    absolute = Path(os.path.abspath(given))
+    return os.path.relpath(absolute.parent.resolve() / absolute.name, workspace)
+
+
+def _rename(workspace: Path, config: Config, args: Arguments) -> int:
+    result = rename(
+        workspace, config["scope"], _within(workspace, args.old), _within(workspace, args.new), dry_run=args.dry_run
+    )
+    links = _count(sum(result.rewritten.values()), "link")
+    changed = _count(len(result.rewritten), "file")
+    prefix = "[dry-run] " if args.dry_run else ""
+    print(f"{prefix}moved {result.old} -> {result.new}; rewrote {links} in {changed}")
+    for path in result.stale_seals:
+        print(f"{path}: carries a seal its rewritten links no longer match — fix: `docsys seal --reseal {path}`")
+    return exitcodes.OK
 
 
 def _report(workspace: Path, config: Config, listing: bool) -> int:
