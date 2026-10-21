@@ -22,7 +22,7 @@ The package also ships a markdownlint rule, `sentence-per-line` (MD100), in `src
 
 A document is a Markdown file of the workspace that git tracks, or would track once added, and that the scope in `docsys.yaml` governs.
 Each check's rules are stated in [`conformance/`](conformance/), as the documents of a small workspace and the findings expected on them, so that any `docsys` package, in any language, can be held to them.
-How the engine works inside, and why it is built so, is explained for its maintainer in [`docs/`](docs/), which holds the fiches on the [runner](docs/runner.md), on the ULID check, [referential integrity](docs/referential-integrity.md), and on the [paired-change rule](docs/paired-change.md); the fiches on the other checks are still to write.
+How the engine works inside, and why it is built so, is explained for its maintainer in [`docs/`](docs/), which holds the fiches on the [runner](docs/runner.md), on the ULID check, [referential integrity](docs/referential-integrity.md), on the [paired-change rule](docs/paired-change.md), and on the [phase ledger and the phase-state check](docs/phase-state.md); the fiches on the other checks are still to write.
 A finding reads `path:line: rule: message — fix: the edit that clears it`.
 
 `docsys` exits `0` when every check passes, `1` when a check reports a finding, and `2` when the run cannot happen (usage, configuration, workspace); every `docsys` package, in any language, returns the same.
