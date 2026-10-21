@@ -30,7 +30,13 @@ rules:
     severity: error
     statement: >-
       Every relative link in a document resolves to a file or folder that exists,
-      read from the document's own folder.
+      read from the document's own folder, unless `links.allow` names the link.
+  links/allowance:
+    severity: error
+    statement: >-
+      Every `links.allow` entry still allows something: its document holds the link,
+      as written, and the link does not resolve. Reported on `docsys.yaml`, at the
+      line where the entry starts, so the list cannot outlive its reason.
 
 cases:
   - name: a link to an existing sibling
@@ -167,3 +173,131 @@ cases:
     files:
       notes.txt: "[x](gone.md)\n"
     findings: []
+
+  - name: an allowed link that does not resolve is not reported
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    files:
+      docs/a.md: "ok\n\n[x](gone.md)\n"
+    findings: []
+
+  - name: an allowance covers its document and its target, and nothing else
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    files:
+      docs/a.md: "[x](gone.md) [y](other-gone.md)\n"
+      docs/b.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+      - { rule: links/resolve, path: docs/b.md, line: 1 }
+
+  - name: an allowance names the target as written, anchor included
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md#part
+            reason: retired with the old tooling; the record is frozen
+    files:
+      docs/a.md: "[x](gone.md#part) [y](gone.md)\n"
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+
+  - name: an allowance covers a link on every line that holds it
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    files:
+      docs/a.md: "[x](gone.md)\n\n[y](gone.md)\n"
+    findings: []
+
+  - name: an allowance whose link resolves is reported
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: other.md
+            reason: not written yet
+    files:
+      docs/a.md: "[x](other.md)\n"
+      docs/other.md: ""
+    findings:
+      - { rule: links/allowance, path: docsys.yaml, line: 4 }
+
+  - name: an allowance whose document no longer holds the link is reported
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    files:
+      docs/a.md: "nothing to see\n"
+    findings:
+      - { rule: links/allowance, path: docsys.yaml, line: 4 }
+
+  - name: an allowance whose document does not exist is reported
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    findings:
+      - { rule: links/allowance, path: docsys.yaml, line: 4 }
+
+  - name: an allowance for a document the scope excludes is reported
+    config: |
+      version: 1
+      scope:
+        exclude:
+          legacy/: predates docsys; awaiting review
+      links:
+        allow:
+          - document: legacy/old.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+    files:
+      legacy/old.md: "[x](gone.md)\n"
+    findings:
+      - { rule: links/allowance, path: docsys.yaml, line: 7 }
+
+  - name: each stale allowance is reported on its own line, after the broken links
+    config: |
+      version: 1
+      links:
+        allow:
+          - document: docs/a.md
+            target: gone.md
+            reason: retired with the old tooling; the record is frozen
+          - document: docs/a.md
+            target: other.md
+            reason: not written yet
+          - document: docs/a.md
+            target: missing.md
+            reason: not written yet
+    files:
+      docs/a.md: "[x](gone.md) [y](other.md) [z](broken.md)\n"
+      docs/other.md: ""
+    findings:
+      - { rule: links/resolve, path: docs/a.md, line: 1 }
+      - { rule: links/allowance, path: docsys.yaml, line: 7 }
+      - { rule: links/allowance, path: docsys.yaml, line: 10 }
