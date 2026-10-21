@@ -85,7 +85,7 @@ def _ids(records: Records) -> list[Finding]:
                     path,
                     line,
                     f"id {identifier!r} is not a valid ULID",
-                    "mint one with `python -m docsys.ulid`",
+                    "mint one with `docsys id`",
                 )
             )
         if not isinstance(identifier, str):
@@ -97,7 +97,7 @@ def _ids(records: Records) -> list[Finding]:
                     path,
                     line,
                     f"duplicate id (also in {seen[identifier]})",
-                    "give one of the two records a fresh `id` from `python -m docsys.ulid`",
+                    "give one of the two records a fresh `id` from `docsys id`",
                 )
             )
         seen[identifier] = path
