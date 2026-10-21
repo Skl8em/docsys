@@ -70,7 +70,7 @@ def check(workspace: Path, config: Config) -> list[Finding]:
             frontmatters[path] = parse(texts[path])
         except FrontmatterError:
             continue  # the frontmatter check reports it
-    findings = _folders(ledger, phases, phases["ledger"], files(workspace))
+    findings = _folders(ledger, phases, phases["ledger"], files(workspace, under=phases["root"]))
     for table in phases["tables"]:
         findings += _table(ledger, phases, table["path"], re.compile(table["row"]), texts.get(table["path"], ""))
     frozen = {path for path, fm in frontmatters.items() if fm and fm.get("status", (None, 0))[0] in FROZEN_STATUSES}
