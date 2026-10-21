@@ -8,19 +8,13 @@ timestamp. Two minting modes (ADR-028):
   - chronological (ADRs, append-only): timestamp = real creation time;
   - ordinal (phases, re-orderable): timestamp = a controlled `order` sort-key.
 
-Standard library only. A library (new_ulid, is_ulid, timestamp_of) and a CLI:
-
-    python -m docsys.ulid                       # now
-    python -m docsys.ulid --at 2026-08-01       # a given date (chronological)
-    python -m docsys.ulid --order 8500000       # an ordinal key (phases)
-    python -m docsys.ulid --slug gerund-naming  # prints <ulid>-<slug>
+Standard library only. A library (new_ulid, is_ulid, timestamp_of, at_to_ms); the
+command line is `docsys id` (see cli.py).
 """
 
-import argparse
 import datetime
 import re
 import secrets
-import sys
 import time
 from typing import Final
 
@@ -65,36 +59,12 @@ def timestamp_of(ulid: str) -> int:
     return t
 
 
-def _iso_to_ms(s: str) -> int:
+def at_to_ms(text: str) -> int:
+    """Milliseconds since the epoch of an ISO date or date-time, read as UTC."""
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
-            dt = datetime.datetime.strptime(s, fmt).replace(tzinfo=datetime.UTC)
-            return int(dt.timestamp() * 1000)
+            dt = datetime.datetime.strptime(text, fmt).replace(tzinfo=datetime.UTC)
         except ValueError:
             continue
-    raise SystemExit(f"unparseable --at date: {s!r} (use YYYY-MM-DD or ISO)")
-
-
-class Arguments(argparse.Namespace):
-    """The parsed command line, typed: argparse fills these attributes."""
-
-    at: str | None = None
-    order: int | None = None
-    slug: str | None = None
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Mint a ULID.")
-    g = ap.add_mutually_exclusive_group()
-    g.add_argument("--at", help="chronological: ISO date/time for the timestamp")
-    g.add_argument("--order", type=int, help="ordinal: a controlled sort-key (phases)")
-    ap.add_argument("--slug", help="append -<slug> to print a filename stem")
-    args = ap.parse_args(namespace=Arguments())
-
-    ts = _iso_to_ms(args.at) if args.at else None
-    ulid = new_ulid(ts_ms=ts, order=args.order)
-    sys.stdout.write(f"{ulid}-{args.slug}\n" if args.slug else f"{ulid}\n")
-
-
-if __name__ == "__main__":
-    main()
+        return int(dt.timestamp() * 1000)
+    raise ValueError(f"unparseable date: {text!r} (use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
