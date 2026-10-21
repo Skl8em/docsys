@@ -13,6 +13,7 @@ from .documents import DocumentsError, documents, excluded, exclusions
 from .rename import RenameError, rename
 from .runner import run
 from .seal import SealOutcome, seal_text, sealed_text
+from .slugify import SlugifyError, slugify
 from .ulid import at_to_ms, new_ulid
 from .workspace import WorkspaceError, resolve_workspace
 from .yaml_frontmatter import parse
@@ -73,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     move.add_argument("new", metavar="NEW", help="where it goes; it must not exist")
     move.add_argument("--dry-run", action="store_true", help="report what would be moved and rewritten, change nothing")
     move.add_argument("--workspace", help="the project root holding docsys.yaml (default: the nearest above here)")
+    name = commands.add_parser(
+        "slugify", help="rename each document that declares a slug to <slug>.md, links following"
+    )
+    name.add_argument("--dry-run", action="store_true", help="list the renames, make none")
+    name.add_argument("--workspace", help="the project root holding docsys.yaml (default: the nearest above here)")
     return parser
 
 
@@ -92,12 +98,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(workspace)
         if args.command == "seal":
             return _seal(args, [workspace / path for path in documents(workspace, config["scope"])])
+        if args.command == "slugify":
+            return _slugify(workspace, config, args)
         if args.command == "rename":
             return _rename(workspace, config, args)
         if args.command == "report":
             return _report(workspace, config, args.documents)
         report = run(workspace, config)
-    except (ConfigError, DocumentsError, RenameError) as exc:
+    except (ConfigError, DocumentsError, RenameError, SlugifyError) as exc:
         print(f"docsys: {exc}", file=sys.stderr)
         return exitcodes.ERROR
     for finding in report.errors:
@@ -182,6 +190,22 @@ def _rename(workspace: Path, config: Config, args: Arguments) -> int:
     for path in result.stale_seals:
         print(f"{path}: carries a seal its rewritten links no longer match — fix: `docsys seal --reseal {path}`")
     return exitcodes.OK
+
+
+def _slugify(workspace: Path, config: Config, args: Arguments) -> int:
+    result = slugify(workspace, config["scope"], dry_run=args.dry_run)
+    prefix = "[dry-run] " if args.dry_run else ""
+    for old, new in result.renamed:
+        print(f"{prefix}{old} -> {new}")
+    for path in result.stale_seals:
+        print(f"{path}: carries a seal its rewritten links no longer match — fix: `docsys seal --reseal {path}`")
+    for path, why in result.skipped:
+        print(f"{path}: skipped, {why}")
+    if not result.renamed:
+        print("nothing to do — every slugged document is named after its slug.")
+    else:
+        print(f"\n{_count(len(result.renamed), 'document')} {'to rename' if args.dry_run else 'renamed'}.")
+    return exitcodes.FINDINGS if result.skipped else exitcodes.OK
 
 
 def _report(workspace: Path, config: Config, listing: bool) -> int:
