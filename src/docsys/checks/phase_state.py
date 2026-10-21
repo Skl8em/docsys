@@ -82,14 +82,18 @@ def check(workspace: Path, config: Config) -> list[Finding]:
 
 def _folders(ledger: Ledger, phases: Phases, ledger_path: str, tracked: list[str]) -> list[Finding]:
     """A numbered phase without its folder; a phase folder the ledger does not list.
-    A folder exists when a file is in it."""
+    A folder exists when a file is in it; a file beside the phase folders, such as an
+    era's README or a `.DS_Store`, is not one."""
     expected = {
         f"{phases['root']}/{entry.era}/{phases['folder'].format(number=number, name=entry.name)}": entry
         for number, entry in ledger.numbered().items()
     }
     depth = len(phases["root"].split("/")) + 2
-    present = {"/".join(p.split("/")[:depth]) for p in tracked if p.startswith(phases["root"] + "/")}
-    present = {p for p in present if p.count("/") + 1 == depth}
+    present = {
+        "/".join(p.split("/")[:depth])
+        for p in tracked
+        if p.startswith(phases["root"] + "/") and p.count("/") + 1 > depth
+    }
     findings: list[Finding] = []
     for path, entry in expected.items():
         if path not in present:

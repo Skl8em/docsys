@@ -170,6 +170,19 @@ cases:
       - { rule: phase-state/folder, path: phases.yaml, line: 3 }
       - { rule: phase-state/folder, path: phases/first/phase-02-build, line: 1 }
 
+  - name: a file beside the phase folders is no phase folder
+    config: *config
+    files:
+      phases.yaml: *ledger
+      roadmap.md: *roadmap
+      README.md: *readme
+      phases/first/phase-01-start/README.md: "x\n"
+      phases/second/phase-02-build/README.md: "x\n"
+      phases/second/phase-03-harden/README.md: "x\n"
+      phases/second/README.md: "x\n"
+      phases/second/.DS_Store: "x\n"
+    findings: []
+
   # --- tables ---
 
   - name: the current phase marked done

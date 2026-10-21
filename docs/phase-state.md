@@ -40,7 +40,7 @@ When an entry is malformed, only the findings about entries and about `lagging` 
 The phase-state check, [`src/docsys/checks/phase_state.py`](../src/docsys/checks/phase_state.py), reads every other place against the ledger.
 Where each place is, and the shape of its rows, is the project's: `phases:` in `docsys.yaml`, whose keys the [`docsys.yaml` reference](https://github.com/Skl8em/documentality/blob/main/codifying/docsys-configuration.md) lists.
 
-- **Folders** (`phase-state/folder`) — a numbered phase has its folder, `<root>/<era>/<folder>`, and every folder at that depth under `<root>` is one the ledger gives a phase; a folder exists when a file of the workspace is in it, since git keeps no empty folder.
+- **Folders** (`phase-state/folder`) — a numbered phase has its folder, `<root>/<era>/<folder>`, and every folder at that depth under `<root>` is one the ledger gives a phase; a folder exists when a file of the workspace is in it, since git keeps no empty folder, and a file at that depth, an era's README or the `.DS_Store` macOS leaves, is not a folder.
 - **Tables** (`phase-state/table`) — each phase row of a configured table carries the marker of its ledger status; a row that numbers a phase the ledger has not numbered fails; the current phase has a row; and a row pattern that matches no row is an error, not a pass, since a reworded table would otherwise switch the rule off without a word.
 - **Mentions** (`phase-state/mention`) — no document in scope names, by number, a phase above the highest the ledger has numbered.
 - **Status** (`phase-state/status`) — the file `phases.status` names has exactly one status line, and it names the current phase.
