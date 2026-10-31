@@ -43,6 +43,9 @@ CASES: list[tuple[str, str, list[int]]] = [
         "**Two-level verification.** `[V]` only when read. `[C]` means claimed.\n",
         [1],
     ),
+    # An earlier boundary that is no boundary (abbreviation, list number) must not hide a real one.
+    ("abbreviation before a real boundary", "Some tools, e.g. Nix, are pinned. Others are not.\n", [1]),
+    ("numbered item holding two sentences", "10. First point. Second point.\n", [1]),
     # --- (b) one sentence broken across lines ---------------------------------
     ("sentence broken mid-emphasis", "The point is *not*\nthat it matters.\n", [1]),
     ("plain sentence broken across lines", "The point is not\nthat it matters.\n", [1]),
