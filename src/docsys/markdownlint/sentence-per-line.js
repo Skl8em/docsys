@@ -17,8 +17,9 @@
 // `**Stop here.**` is a whole sentence wearing a wrapper, and ADR-021 asks for a
 // line break after it just the same. Emphasis is rendering-neutral, so it must be
 // transparent to the rule on BOTH sides — a trailing closer and a leading opener.
+// A backtick is an opener too: a sentence may open with inline code (`[V]` only when…).
 const CLOSERS = "\"')\\]”’»*_";
-const OPENERS = "A-Z(“\"'«*_\\[";
+const OPENERS = "A-Z(“\"'«*_`\\[";
 const SENTENCE_END = new RegExp("[.!?][" + CLOSERS + "]*$");
 const INTERNAL_BOUNDARY = new RegExp("[.!?][" + CLOSERS + "]*\\s+(?=[" + OPENERS + "])");
 // A trailing ":" introduces a list/quote and is exempt — including when emphasised
