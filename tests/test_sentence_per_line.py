@@ -37,6 +37,12 @@ CASES: list[tuple[str, str, list[int]]] = [
     ("second sentence opens with emphasis", "The plain sentence ends here. **And a bold one starts.**\n", [1]),
     ("second sentence opens with a link", "The plain sentence ends here. [ADR-021](x.md) says otherwise.\n", [1]),
     ("emphasis on both sides of the boundary", "*First sentence.* **Second sentence.**\n", [1]),
+    ("second sentence opens with inline code", "The plain sentence ends here. `code` opens the next one.\n", [1]),
+    (
+        "strong lead-in sentence, then a sentence opening with inline code",
+        "**Two-level verification.** `[V]` only when read. `[C]` means claimed.\n",
+        [1],
+    ),
     # --- (b) one sentence broken across lines ---------------------------------
     ("sentence broken mid-emphasis", "The point is *not*\nthat it matters.\n", [1]),
     ("plain sentence broken across lines", "The point is not\nthat it matters.\n", [1]),
@@ -44,6 +50,8 @@ CASES: list[tuple[str, str, list[int]]] = [
     ("strong-emphasised sentence on its own line", "**You should stop here.**\nThe next sentence follows.\n", []),
     ("emphasised sentence on its own line", "*This is an important distinction.*\nAnd so is this one.\n", []),
     ("emphasis mid-sentence", "The distinction is *important* and worth keeping.\n", []),
+    ("inline code mid-sentence", "Run `just lint` and read `a.b` before `c.d` changes.\n", []),
+    ("inline code opening a sentence on its own line", "`[V]` only when the passage was read.\n", []),
     ("emphasis around a trailing colon", "**Why:**\nbecause the diff should show the sentence that changed.\n", []),
     # --- clean: the abbreviation / initial / decimal allow-list ---------------
     ("abbreviation inside emphasis", "See *ibid.* Then we continue.\n", []),
