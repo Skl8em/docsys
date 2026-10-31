@@ -18,6 +18,7 @@ Its checks were extracted, one at a time and test first, from the `scripts/` fol
 `docsys check` runs those a project's `docsys.yaml` turns on, and each rule has a severity the project can change.
 A project can also name external tools, such as a Markdown linter, that `docsys check` runs after its checks.
 The package also ships a markdownlint rule, `sentence-per-line` (MD100), in `src/docsys/markdownlint/`: a project that keeps one sentence per line names it under `customRules` in its markdownlint configuration, and runs markdownlint as a tool.
+Its companion `split-sentences.js` brings an existing corpus into compliance: `markdownlint-cli2 | node split-sentences.js` breaks, in place, the lines the rule flagged as two sentences on one line, and touches nothing else; a sentence broken across lines is left for a person to join or end.
 `docsys report` lists each exclusion of the scope with its reason and the number of documents it leaves out, and counts the documents in scope; `--documents` adds the excluded documents one by one.
 Four commands write for the author what the checks verify: `docsys id` mints a ULID, `docsys seal` writes a frozen record's `hash:` seal, `docsys rename` moves a file or folder and rewrites the links to it, and `docsys slugify` names each document after its slug; the documentation system's [commands reference](https://github.com/Skl8em/documentality/blob/main/codifying/docsys-commands.md) lists their options.
 `legacy/` keeps `migrate_ids.py`, retired code that does not run, with its [README](legacy/README.md).
