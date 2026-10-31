@@ -64,9 +64,11 @@ module.exports = {
         if (!line) {
           continue;
         }
-        // (a) two sentences on one line.
-        const m = INTERNAL_BOUNDARY.exec(line);
-        if (m) {
+        // (a) two sentences on one line: the first boundary that is a real one. An
+        // abbreviation or a list number ("10.") is a candidate that is no boundary, and
+        // must not hide the real one after it.
+        const boundaries = new RegExp(INTERNAL_BOUNDARY.source, "g");
+        for (let m = boundaries.exec(line); m; m = boundaries.exec(line)) {
           const before = line.slice(0, m.index + 1);
           if (!ENDS_ABBR.test(before) && !ENDS_INITIAL.test(before) && !ENDS_DECIMAL.test(before)) {
             onError({
@@ -74,6 +76,7 @@ module.exports = {
               detail: "Two sentences on one line — break at the sentence boundary.",
               range: [m.index + 1, 1]
             });
+            break;
           }
         }
         // (b) a sentence broken across lines: a non-final line that does not end a
